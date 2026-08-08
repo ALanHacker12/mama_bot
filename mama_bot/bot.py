@@ -10,7 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 import aioschedule
 
 # ========== ТОКЕН ==========
-TOKEN = "СЮДА_ВАШ_ТОКЕН"
+TOKEN = "8740387123:AAHET8K33FpV0XRAAu2rIubP3zM4qTA01Yk"
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
