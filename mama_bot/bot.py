@@ -7,7 +7,6 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-import aioschedule
 
 # ========== ТОКЕН ==========
 TOKEN = "8740387123:AAHET8K33FpV0XRAAu2rIubP3zM4qTA01Yk"
@@ -18,7 +17,7 @@ dp = Dispatcher()
 
 user_data = {}
 
-# ========== БАЗА ШАБЛОНОВ ПРОМТОВ (ПО КАТЕГОРИЯМ) ==========
+# ========== БАЗА ШАБЛОНОВ ПРОМТОВ ==========
 PROMPT_TEMPLATES = {
     "dress": "Professional e-commerce product photo of a {description} displayed on a minimalist wooden hanger. Clean white studio background, soft diffused lighting from the left, no harsh shadows. The fabric texture is highly detailed, realistic 8k resolution, commercial photography style, bright and airy, no wrinkles, pure white backdrop, perfect for online store catalog. Show the full front view, side drape, and close-up of the collar based on the provided angles.",
     
@@ -111,6 +110,44 @@ def detect_category(text):
                 return category
     return "default"
 
+# ========== ФУНКЦИЯ НАПОМИНАНИЙ (без aioschedule) ==========
+async def check_reminders():
+    """Проверяет время и отправляет напоминания"""
+    last_morning = None
+    last_evening = None
+    
+    while True:
+        now = datetime.now()
+        current_time = now.strftime("%H:%M")
+        
+        # Утреннее напоминание (9:00)
+        if current_time == "09:00" and last_morning != now.strftime("%d.%m.%Y"):
+            last_morning = now.strftime("%d.%m.%Y")
+            for user_id in user_data.keys():
+                try:
+                    msg = random.choice(MORNING_MESSAGES)
+                    await bot.send_message(user_id, msg, parse_mode="HTML")
+                except:
+                    pass
+        
+        # Вечернее напоминание (19:00)
+        if current_time == "19:00" and last_evening != now.strftime("%d.%m.%Y"):
+            last_evening = now.strftime("%d.%m.%Y")
+            for user_id in user_data.keys():
+                try:
+                    sales_today = len([s for s in user_data[user_id].get("sales", []) 
+                                      if s.get("date") == datetime.now().strftime("%d.%m.%Y")])
+                    msg = random.choice(EVENING_MESSAGES)
+                    await bot.send_message(
+                        user_id,
+                        f"{msg}\n\n📊 Продано сегодня: {sales_today} вещей",
+                        parse_mode="HTML"
+                    )
+                except:
+                    pass
+        
+        await asyncio.sleep(30)  # Проверяем каждые 30 секунд
+
 # ========== /start ==========
 @dp.message(Command("start"))
 async def start(message: Message, state: FSMContext):
@@ -140,36 +177,6 @@ async def back_to_menu(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
-# ========== ЕЖЕДНЕВНЫЕ НАПОМИНАНИЯ (СЛУЧАЙНЫЕ) ==========
-async def morning_reminder():
-    for user_id in user_data.keys():
-        try:
-            msg = random.choice(MORNING_MESSAGES)
-            await bot.send_message(user_id, msg, parse_mode="HTML")
-        except:
-            pass
-
-async def evening_reminder():
-    for user_id in user_data.keys():
-        try:
-            sales_today = len([s for s in user_data[user_id].get("sales", []) 
-                              if s.get("date") == datetime.now().strftime("%d.%m.%Y")])
-            msg = random.choice(EVENING_MESSAGES)
-            await bot.send_message(
-                user_id,
-                f"{msg}\n\n📊 Продано сегодня: {sales_today} вещей",
-                parse_mode="HTML"
-            )
-        except:
-            pass
-
-async def scheduler():
-    aioschedule.every().day.at("09:00").do(morning_reminder)
-    aioschedule.every().day.at("19:00").do(evening_reminder)
-    while True:
-        await aioschedule.run_pending()
-        await asyncio.sleep(60)
-
 # ========== СТРАТЕГИЯ ==========
 @dp.callback_query(lambda c: c.data == "strategy")
 async def show_strategy(callback: CallbackQuery, state: FSMContext):
@@ -191,7 +198,7 @@ async def show_strategy(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_button())
     await callback.answer()
 
-# ========== МЕНЮ ПРОМТОВ (НОВОЕ) ==========
+# ========== МЕНЮ ПРОМТОВ ==========
 @dp.callback_query(lambda c: c.data == "prompt_menu")
 async def prompt_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -221,14 +228,10 @@ async def generate_prompt(message: Message, state: FSMContext):
         )
         return
     
-    # Определяем категорию
     category = detect_category(description)
     template = PROMPT_TEMPLATES.get(category, PROMPT_TEMPLATES["default"])
-    
-    # Генерируем промт
     prompt = template.format(description=description)
     
-    # Показываем категорию и промт
     category_names = {
         "dress": "👗 Платье",
         "coat": "🧥 Пальто/Куртка",
@@ -616,7 +619,8 @@ async def show_scripts(callback: CallbackQuery, state: FSMContext):
 # ========== ЗАПУСК ==========
 async def main():
     print("✅ Бот с умными промтами запущен!")
-    asyncio.create_task(scheduler())
+    # Запускаем проверку напоминаний в фоновом режиме
+    asyncio.create_task(check_reminders())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
