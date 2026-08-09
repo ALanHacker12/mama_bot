@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-# ========== ТОКЕН ==========
+# ========== ТОКЕН (УЖЕ ВСТАВЛЕН) ==========
 TOKEN = "8740387123:AAHET8K33FpV0XRAAu2rIubP3zM4qTA01Yk"
 
 logging.basicConfig(level=logging.INFO)
@@ -17,41 +17,8 @@ dp = Dispatcher()
 
 user_data = {}
 
-# ========== БАЗА ШАБЛОНОВ ПРОМТОВ ==========
-PROMPT_TEMPLATES = {
-    "dress": "Professional e-commerce product photo of a {description} displayed on a minimalist wooden hanger. Clean white studio background, soft diffused lighting from the left, no harsh shadows. The fabric texture is highly detailed, realistic 8k resolution, commercial photography style, bright and airy, no wrinkles, pure white backdrop, perfect for online store catalog. Show the full front view, side drape, and close-up of the collar based on the provided angles.",
-    
-    "coat": "High-end fashion studio photography of a {description} elegantly displayed on a sleek mannequin torso. Premium winter/autumn outerwear. The background is pure white (RGB 255). Soft box lighting, highlighting the flow of the fabric and the depth of the color. 8k, hyper-realistic, sharp focus on the textile weave, minimalistic, premium look, no visible tags or logos.",
-    
-    "pants": "Professional product photography of {description} laid flat on a clean white surface. Studio lighting, sharp focus on the denim texture and stitching details. Crisp, high-contrast image, commercial catalog style, 8k resolution, pure white background, perfect for online store. Show front view, back view with pockets, and belt loops.",
-    
-    "sweater": "Cozy knitwear studio shot of a {description} on a wooden hanger. Soft natural lighting, white background, detailed texture of the knit fabric, realistic colors, commercial fashion photography, bright and warm atmosphere, 8k resolution, sharp focus on the collar and cuffs.",
-    
-    "shirt": "Crisp professional product photo of a {description} laid flat on a white background. Studio lighting, perfect ironed look, sharp focus on the collar, cuffs, and button placket. Minimalist, high-end catalog style, 8k resolution, pure white backdrop, commercial quality.",
-    
-    "short": "Modern e-commerce photo of {description} on a minimalist hanger. Clean white studio background, soft diffused lighting, detailed fabric texture, realistic colors, bright and airy look, 8k resolution, perfect for online store catalog. Show front and back views.",
-    
-    "default": "Professional product photography of a {description} on a clean white background. Studio lighting, sharp focus on the fabric texture and details, realistic colors, 8k resolution, commercial quality, minimalist style, perfect for online catalog."
-}
-
-# ========== РАЗНЫЕ ФОРМУЛИРОВКИ НАПОМИНАНИЙ ==========
-MORNING_MESSAGES = [
-    "🌅 Доброе утро! Сегодня отличный день для продаж! 📸 Сфоткай 5 вещей и выложи на Авито.",
-    "🌞 Вставай, мама! Новая партия ждёт своего покупателя. Сегодня цель — 3 продажи! 💪",
-    "☀️ Утро начинается с плана: 5 фото, 5 объявлений, 5 ответов покупателям. Ты справишься! 🚀",
-    "🌅 Солнце уже высоко, а твои вещи всё ещё ждут новых хозяев. Действуй! 👗",
-    "✨ Доброе утро! Помни: каждый день — это новый шанс продать всё, что лежит на вешалках!",
-    "📸 Просыпайся, мама! Сегодня нужно сделать 5 крутых фото и покорить Авито! 🔥"
-]
-
-EVENING_MESSAGES = [
-    "🌙 Отличная работа сегодня! Проверь сообщения и обнови объявления. Завтра будет новый день! 🌟",
-    "🌙 День закончен. Посчитай продажи и запиши их в бота. Отдыхай, ты заслужила! 💤",
-    "🌙 Время подводить итоги! Сколько вещей продала сегодня? Не забудь обновить объявления! 📊",
-    "🌙 Ты молодец! Даже если продаж мало — главное, ты двигаешься вперёд. Завтра будет лучше! 💪",
-    "🌙 Вечерний чек-лист: ответь на все сообщения, обнови объявления, отдохни! 🌟",
-    "🌙 Устала? Проверь Авито, ответь покупателям и ложись спать. Завтра новые свершения! 🚀"
-]
+# ========== ПРОМТ ДЛЯ МАНЕКЕНА ==========
+MANNEQUIN_PROMPT = """Take this garment and realistically place it on a minimalist white female mannequin torso (matte finish, headless). Pure white (hex #FFFFFF) studio background. Keep the exact shape, folds, draping, fabric texture, and colors of the garment exactly as they are — do not change the fit, silhouette, or any design details. The garment should look like it naturally fits the mannequin without any distortion. Add soft, diffused studio lighting from the left and right to create natural shadows that highlight the garment's volume and flow, giving a premium 3D look. Do not alter the garment itself — only improve the lighting, clarity, and background. The mannequin must be visible and realistic. High resolution, 8k, hyper-realistic, luxury fashion catalog quality, sharp focus on fabric texture, seams and labels."""
 
 # ========== ГЛАВНОЕ МЕНЮ ==========
 def main_menu():
@@ -63,7 +30,7 @@ def main_menu():
         [InlineKeyboardButton(text="➕ Добавить вещь", callback_data="add_item_menu")],
         [InlineKeyboardButton(text="🔍 Поиск вещи", callback_data="search_item")],
         [InlineKeyboardButton(text="🗣 Готовые фразы", callback_data="scripts")],
-        [InlineKeyboardButton(text="🎨 Промт для фото", callback_data="prompt_menu")]
+        [InlineKeyboardButton(text="🤖 Промт для манекена", callback_data="mannequin_prompt")]
     ])
     return kb
 
@@ -74,8 +41,9 @@ def back_button():
     return kb
 
 # ========== СОСТОЯНИЯ ==========
-class PromptForm(StatesGroup):
-    description = State()
+class MannequinForm(StatesGroup):
+    photo = State()
+    name = State()
 
 class ItemForm(StatesGroup):
     photo = State()
@@ -110,27 +78,35 @@ def detect_category(text):
                 return category
     return "default"
 
-# ========== ФУНКЦИЯ НАПОМИНАНИЙ (без aioschedule) ==========
+# ========== НАПОМИНАНИЯ ==========
 async def check_reminders():
-    """Проверяет время и отправляет напоминания"""
     last_morning = None
     last_evening = None
+    
+    MORNING_MESSAGES = [
+        "🌅 Доброе утро! Сегодня отличный день для продаж! 📸 Сфоткай 5 вещей и выложи на Авито.",
+        "🌞 Вставай, мама! Новая партия ждёт своего покупателя. Сегодня цель — 3 продажи! 💪",
+        "☀️ Утро начинается с плана: 5 фото, 5 объявлений, 5 ответов покупателям. Ты справишься! 🚀"
+    ]
+    
+    EVENING_MESSAGES = [
+        "🌙 Отличная работа сегодня! Проверь сообщения и обнови объявления. Завтра будет новый день! 🌟",
+        "🌙 День закончен. Посчитай продажи и запиши их в бота. Отдыхай, ты заслужила! 💤",
+        "🌙 Время подводить итоги! Сколько вещей продала сегодня? Не забудь обновить объявления! 📊"
+    ]
     
     while True:
         now = datetime.now()
         current_time = now.strftime("%H:%M")
         
-        # Утреннее напоминание (9:00)
         if current_time == "09:00" and last_morning != now.strftime("%d.%m.%Y"):
             last_morning = now.strftime("%d.%m.%Y")
             for user_id in user_data.keys():
                 try:
-                    msg = random.choice(MORNING_MESSAGES)
-                    await bot.send_message(user_id, msg, parse_mode="HTML")
+                    await bot.send_message(user_id, random.choice(MORNING_MESSAGES), parse_mode="HTML")
                 except:
                     pass
         
-        # Вечернее напоминание (19:00)
         if current_time == "19:00" and last_evening != now.strftime("%d.%m.%Y"):
             last_evening = now.strftime("%d.%m.%Y")
             for user_id in user_data.keys():
@@ -146,7 +122,7 @@ async def check_reminders():
                 except:
                     pass
         
-        await asyncio.sleep(30)  # Проверяем каждые 30 секунд
+        await asyncio.sleep(30)
 
 # ========== /start ==========
 @dp.message(Command("start"))
@@ -198,40 +174,45 @@ async def show_strategy(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_button())
     await callback.answer()
 
-# ========== МЕНЮ ПРОМТОВ ==========
-@dp.callback_query(lambda c: c.data == "prompt_menu")
-async def prompt_menu(callback: CallbackQuery, state: FSMContext):
+# ========== МАНЕКЕН ПРОМТ ==========
+@dp.callback_query(lambda c: c.data == "mannequin_prompt")
+async def mannequin_prompt_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text(
-        "🎨 <b>Генератор промтов для Nano Banana</b>\n\n"
-        "Напиши <b>название вещи</b> на русском.\n"
-        "Я сам определю категорию и сгенерирую идеальный промт!\n\n"
-        "📝 <b>Примеры:</b>\n"
-        "• <i>летнее платье с цветочным принтом</i>\n"
-        "• <i>зимнее пальто с поясом, двубортное</i>\n"
-        "• <i>джинсы скинни тёмно-синие</i>\n\n"
-        "Можешь добавить любые детали — я учту всё!",
+        "🤖 <b>Генерация промта для манекена</b>\n\n"
+        "Отправь мне <b>фото вещи</b> (одно фото, общий вид).\n"
+        "Я определю категорию и выдам готовый промт для Nano Banana.\n\n"
+        "📌 <b>Инструкция после получения промта:</b>\n"
+        "1️⃣ Скопируй промт\n"
+        "2️⃣ Вставь в Nano Banana\n"
+        "3️⃣ Загрузи это же фото\n"
+        "4️⃣ Нажми «Сгенерировать»\n\n"
+        "✨ Получишь фото вещи на манекене с белым фоном!",
         parse_mode="HTML",
         reply_markup=back_button()
     )
-    await state.set_state(PromptForm.description)
+    await state.set_state(MannequinForm.photo)
     await callback.answer()
 
-@dp.message(PromptForm.description)
-async def generate_prompt(message: Message, state: FSMContext):
+@dp.message(MannequinForm.photo, F.photo)
+async def mannequin_prompt_photo_received(message: Message, state: FSMContext):
+    photo_id = message.photo[-1].file_id
+    await state.update_data(photo=photo_id)
+    await message.answer(
+        "📝 Напиши <b>название вещи</b> (например: Платье летнее, Пальто зимнее).\n"
+        "Это поможет сделать промт точнее.",
+        parse_mode="HTML",
+        reply_markup=back_button()
+    )
+    await state.set_state(MannequinForm.name)
+
+@dp.message(MannequinForm.name)
+async def mannequin_prompt_final(message: Message, state: FSMContext):
+    data = await state.get_data()
+    photo_id = data.get("photo")
     description = message.text.strip()
     
-    if len(description) < 3:
-        await message.answer(
-            "❌ Слишком короткое описание. Напиши подробнее, что это за вещь.",
-            reply_markup=back_button()
-        )
-        return
-    
     category = detect_category(description)
-    template = PROMPT_TEMPLATES.get(category, PROMPT_TEMPLATES["default"])
-    prompt = template.format(description=description)
-    
     category_names = {
         "dress": "👗 Платье",
         "coat": "🧥 Пальто/Куртка",
@@ -242,24 +223,29 @@ async def generate_prompt(message: Message, state: FSMContext):
         "default": "👔 Другое"
     }
     
-    full_response = (
-        f"🎨 <b>Твой промт для Nano Banana</b>\n\n"
-        f"📌 <b>Категория:</b> {category_names.get(category, 'Другое')}\n"
-        f"📝 <b>Описание:</b> {description}\n\n"
-        f"<b>⬇️ Скопируй этот текст:</b>\n"
-        f"<code>{prompt}</code>\n\n"
-        "📌 <b>Инструкция:</b>\n"
-        "1️⃣ Скопируй текст выше\n"
-        "2️⃣ Вставь в Nano Banana\n"
-        "3️⃣ Загрузи 5-6 фото с разных ракурсов\n"
-        "4️⃣ Нажми «Сгенерировать»\n\n"
-        "✨ Готово! Фото будет как в бутике!"
-    )
+    full_prompt = f"{MANNEQUIN_PROMPT}\n\nGarment description: {description} (category: {category_names.get(category, 'Другое')})"
     
-    await message.answer(full_response, parse_mode="HTML", reply_markup=main_menu())
+    await message.answer_photo(
+        photo_id,
+        caption=(
+            f"🤖 <b>Промт для манекена готов!</b>\n\n"
+            f"📌 <b>Категория:</b> {category_names.get(category, 'Другое')}\n"
+            f"📝 <b>Описание:</b> {description}\n\n"
+            f"<b>⬇️ Скопируй этот промт в Nano Banana:</b>\n"
+            f"<code>{full_prompt}</code>\n\n"
+            "📌 <b>Инструкция:</b>\n"
+            "1️⃣ Скопируй текст выше\n"
+            "2️⃣ Вставь в Nano Banana\n"
+            "3️⃣ Загрузи фото, которое ты только что отправила\n"
+            "4️⃣ Нажми «Сгенерировать»\n\n"
+            "✨ Получишь фото вещи на манекене с белым фоном!"
+        ),
+        parse_mode="HTML",
+        reply_markup=main_menu()
+    )
     await state.clear()
 
-# ========== ДОБАВЛЕНИЕ ВЕЩИ С ФОТО ==========
+# ========== ДОБАВЛЕНИЕ ВЕЩИ ==========
 @dp.callback_query(lambda c: c.data == "add_item_menu")
 async def add_item_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -274,7 +260,7 @@ async def add_item_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 @dp.message(ItemForm.photo, F.photo)
-async def get_item_photo(message: Message, state: FSMContext):
+async def item_photo(message: Message, state: FSMContext):
     photo_id = message.photo[-1].file_id
     await state.update_data(photo=photo_id)
     await message.answer(
@@ -285,7 +271,7 @@ async def get_item_photo(message: Message, state: FSMContext):
     await state.set_state(ItemForm.name)
 
 @dp.message(ItemForm.name)
-async def get_item_name(message: Message, state: FSMContext):
+async def item_name(message: Message, state: FSMContext):
     await state.update_data(name=message.text)
     await message.answer(
         "📏 Напиши <b>размер</b> (46, M, L):",
@@ -295,7 +281,7 @@ async def get_item_name(message: Message, state: FSMContext):
     await state.set_state(ItemForm.size)
 
 @dp.message(ItemForm.size)
-async def get_item_size(message: Message, state: FSMContext):
+async def item_size(message: Message, state: FSMContext):
     await state.update_data(size=message.text)
     await message.answer(
         "🎨 Напиши <b>цвет</b>:",
@@ -305,7 +291,7 @@ async def get_item_size(message: Message, state: FSMContext):
     await state.set_state(ItemForm.color)
 
 @dp.message(ItemForm.color)
-async def get_item_color(message: Message, state: FSMContext):
+async def item_color(message: Message, state: FSMContext):
     await state.update_data(color=message.text)
     await message.answer(
         "🏷️ Напиши <b>категорию</b> (Платья, Кофты, Джинсы, Шорты, Куртки):",
@@ -315,7 +301,7 @@ async def get_item_color(message: Message, state: FSMContext):
     await state.set_state(ItemForm.category)
 
 @dp.message(ItemForm.category)
-async def get_item_category(message: Message, state: FSMContext):
+async def item_category(message: Message, state: FSMContext):
     await state.update_data(category=message.text)
     await message.answer(
         "💰 Напиши <b>цену</b> (число):",
@@ -618,8 +604,7 @@ async def show_scripts(callback: CallbackQuery, state: FSMContext):
 
 # ========== ЗАПУСК ==========
 async def main():
-    print("✅ Бот с умными промтами запущен!")
-    # Запускаем проверку напоминаний в фоновом режиме
+    print("✅ Бот с манекен-промтами запущен!")
     asyncio.create_task(check_reminders())
     await dp.start_polling(bot)
 
