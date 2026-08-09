@@ -1,21 +1,15 @@
 import asyncio
 import logging
 import random
-import io
-import base64
-import os
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-import aiohttp
 
-# ========== ТОКЕНЫ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ ==========
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8740387123:AAHET8K33FpV0XRAAu2rIubP3zM4qTA01Yk")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6K9ZVPPUU4k24ooet9wixfRATN1respYNW7oU9sahcoAQ")
-DATA_DIR = os.getenv("DATA_DIR", "/app/data")
+# ========== ТОКЕН ==========
+BOT_TOKEN = "8740387123:AAHET8K33FpV0XRAAu2rIubP3zM4qTA01Yk"
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
@@ -23,17 +17,37 @@ dp = Dispatcher()
 
 user_data = {}
 
-# ========== ПРОМТ ДЛЯ МАНЕКЕНА ==========
-MANNEQUIN_PROMPT = """Take this exact garment from the photo and realistically place it on a minimalist white female mannequin torso (matte finish, headless, no visible joints). Pure white (hex #FFFFFF) seamless studio background.
-
-CRITICAL REQUIREMENTS:
-1. Keep the exact shape, folds, draping, fabric texture, and colors of the garment exactly as they are — do NOT change the fit, silhouette, or any design details.
-2. All internal tags, labels, seams, and stitching must remain INSIDE the garment and NOT be visible on the front or exterior.
-3. The garment should look like it naturally fits the mannequin without any distortion.
-4. Add soft, diffused studio lighting from the left and right to create natural shadows that highlight the garment's volume and flow, giving a premium 3D look.
-5. Do NOT alter the garment itself — only improve the lighting, clarity, and background.
-
-The result should look like a luxury e-commerce product photo from a high-end brand. High resolution, hyper-realistic, commercial catalog quality, sharp focus on fabric texture, seams and labels."""
+# ========== БИБЛИОТЕКА ПРОМТОВ ==========
+PROMPTS = {
+    "dress": {
+        "name": "👗 Платье",
+        "text": """Professional fashion photography. A beautiful women's dress perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details."""
+    },
+    "coat": {
+        "name": "🧥 Пальто/Куртка",
+        "text": """Professional outerwear photography. A stylish coat perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality."""
+    },
+    "pants": {
+        "name": "👖 Джинсы/Брюки",
+        "text": """Professional product photography. A pair of pants perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original fit, folds, denim texture, and colors. Tags and labels must stay inside. Soft studio lighting. 8k, sharp focus, commercial quality."""
+    },
+    "sweater": {
+        "name": "👚 Кофта/Свитер",
+        "text": """Professional knitwear photography. A cozy sweater perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the original shape, knit texture, drape, and colors. Labels must remain hidden inside. Soft natural lighting. 8k, hyper-realistic, commercial quality."""
+    },
+    "shirt": {
+        "name": "👕 Рубашка/Блузка",
+        "text": """Professional shirt photography. A crisp shirt perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the original shape, collar, cuffs, fabric texture, and colors. Tags must stay inside. Bright studio lighting. 8k, sharp focus, commercial catalog quality."""
+    },
+    "short": {
+        "name": "🩳 Шорты/Юбка",
+        "text": """Professional bottom wear photography. A stylish skirt/shorts perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original shape, draping, fabric texture, and colors. Labels must remain inside. Soft diffused lighting. 8k, commercial quality.""",
+    },
+    "default": {
+        "name": "👔 Другое",
+        "text": """Professional product photography. The garment perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original shape, fabric texture, colors, and all details. All tags and labels must remain hidden inside. Soft studio lighting. 8k, hyper-realistic, commercial catalog quality."""
+    }
+}
 
 # ========== ГЛАВНОЕ МЕНЮ ==========
 def main_menu():
@@ -45,7 +59,7 @@ def main_menu():
         [InlineKeyboardButton(text="➕ Добавить вещь", callback_data="add_item_menu")],
         [InlineKeyboardButton(text="🔍 Поиск вещи", callback_data="search_item")],
         [InlineKeyboardButton(text="🗣 Готовые фразы", callback_data="scripts")],
-        [InlineKeyboardButton(text="🤖 Сгенерировать фото на манекене", callback_data="generate_photo")]
+        [InlineKeyboardButton(text="🎨 Получить промт для манекена", callback_data="prompt_menu")]
     ])
     return kb
 
@@ -61,11 +75,21 @@ def dialog_back_button(callback_data):
     ])
     return kb
 
-# ========== СОСТОЯНИЯ ==========
-class GeneratePhoto(StatesGroup):
-    photo = State()
-    name = State()
+# ========== КЛАВИАТУРА ДЛЯ ВЫБОРА КАТЕГОРИИ ПРОМТА ==========
+def prompt_category_menu():
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👗 Платье", callback_data="prompt_dress")],
+        [InlineKeyboardButton(text="🧥 Пальто/Куртка", callback_data="prompt_coat")],
+        [InlineKeyboardButton(text="👖 Джинсы/Брюки", callback_data="prompt_pants")],
+        [InlineKeyboardButton(text="👚 Кофта/Свитер", callback_data="prompt_sweater")],
+        [InlineKeyboardButton(text="👕 Рубашка/Блузка", callback_data="prompt_shirt")],
+        [InlineKeyboardButton(text="🩳 Шорты/Юбка", callback_data="prompt_short")],
+        [InlineKeyboardButton(text="👔 Другое", callback_data="prompt_default")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
+    ])
+    return kb
 
+# ========== СОСТОЯНИЯ ==========
 class ItemForm(StatesGroup):
     photo = State()
     name = State()
@@ -80,49 +104,6 @@ class SaleForm(StatesGroup):
 
 class SearchForm(StatesGroup):
     query = State()
-
-# ========== ФУНКЦИЯ ДЛЯ РАБОТЫ С GEMINI ==========
-async def generate_mannequin_photo(photo_bytes, description="одежда"):
-    """Отправляет фото в Gemini и возвращает сгенерированное изображение"""
-    
-    photo_base64 = base64.b64encode(photo_bytes).decode('utf-8')
-    prompt = MANNEQUIN_PROMPT + f"\n\nGarment description: {description}"
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-    
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt},
-                    {
-                        "inline_data": {
-                            "mime_type": "image/jpeg",
-                            "data": photo_base64
-                        }
-                    }
-                ]
-            }
-        ]
-    }
-    
-    headers = {"Content-Type": "application/json"}
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers) as resp:
-                if resp.status == 200:
-                    result = await resp.json()
-                    try:
-                        image_data = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("inline_data", {}).get("data")
-                        if image_data:
-                            return base64.b64decode(image_data)
-                    except:
-                        pass
-                return None
-    except Exception as e:
-        logging.error(f"Ошибка при генерации: {e}")
-        return None
 
 # ========== НАПОМИНАНИЯ ==========
 async def check_reminders():
@@ -184,12 +165,12 @@ async def start(message: Message, state: FSMContext):
         }
     await message.answer(
         "👋 Мама, я твой умный бизнес-секретарь!\n"
-        "Я помню каждую вещь, считаю деньги, напоминаю о планах и создаю крутые фото на манекене.\n\n"
+        "Я помню каждую вещь, считаю деньги, напоминаю о планах и даю готовые промты для фото на манекене.\n\n"
         "⬇️ Выбери действие:",
         reply_markup=main_menu()
     )
 
-# ========== НАЗАД В МЕНЮ (НОВЫМ СООБЩЕНИЕМ) ==========
+# ========== НАЗАД В МЕНЮ ==========
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -222,85 +203,51 @@ async def show_strategy(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(text, parse_mode="HTML", reply_markup=back_button())
     await callback.answer()
 
-# ========== ГЕНЕРАЦИЯ ФОТО НА МАНЕКЕНЕ ==========
-@dp.callback_query(lambda c: c.data == "generate_photo")
-async def generate_photo_start(callback: CallbackQuery, state: FSMContext):
+# ========== ПОЛУЧЕНИЕ ПРОМТА ==========
+@dp.callback_query(lambda c: c.data == "prompt_menu")
+async def prompt_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.delete()
     await callback.message.answer(
-        "🤖 <b>Генерация фото на манекене</b>\n\n"
-        "Отправь мне <b>фото вещи</b> (одно фото, общий вид на вешалке).\n"
-        "Я сгенерирую фото на манекене с белым фоном.\n\n"
-        "⏳ Обычно это занимает 15-30 секунд.\n"
-        "Пожалуйста, подожди!",
+        "🎨 <b>Выбери категорию вещи</b>\n\n"
+        "Я выдам готовый промт для генерации фото на манекене.\n"
+        "Просто скопируй его и вставь в Nano Banana / Midjourney / любую нейросеть.\n\n"
+        "⬇️ Выбери категорию:",
+        parse_mode="HTML",
+        reply_markup=prompt_category_menu()
+    )
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("prompt_"))
+async def prompt_category_selected(callback: CallbackQuery, state: FSMContext):
+    category_map = {
+        "prompt_dress": "dress",
+        "prompt_coat": "coat",
+        "prompt_pants": "pants",
+        "prompt_sweater": "sweater",
+        "prompt_shirt": "shirt",
+        "prompt_short": "short",
+        "prompt_default": "default"
+    }
+    
+    category_key = category_map.get(callback.data, "default")
+    prompt_data = PROMPTS.get(category_key, PROMPTS["default"])
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"🎨 <b>Промт для {prompt_data['name']}</b>\n\n"
+        f"<b>⬇️ Скопируй этот текст:</b>\n"
+        f"<code>{prompt_data['text']}</code>\n\n"
+        "📌 <b>Инструкция:</b>\n"
+        "1️⃣ Скопируй текст выше\n"
+        "2️⃣ Вставь в нейросеть (Nano Banana, Midjourney, Kandinsky)\n"
+        "3️⃣ Загрузи своё фото вещи\n"
+        "4️⃣ Нажми «Сгенерировать»\n\n"
+        "✨ Получишь профессиональное фото на манекене!",
         parse_mode="HTML",
         reply_markup=back_button()
     )
-    await state.set_state(GeneratePhoto.photo)
     await callback.answer()
-
-@dp.message(GeneratePhoto.photo, F.photo)
-async def generate_photo_process(message: Message, state: FSMContext):
-    status_msg = await message.answer("📸 Фото получено! Начинаю генерацию... ⏳")
-    
-    try:
-        photo = message.photo[-1]
-        file = await bot.get_file(photo.file_id)
-        photo_bytes = await bot.download_file(file.file_path)
-        photo_data = photo_bytes.read()
-        
-        await status_msg.edit_text("📝 Напиши краткое описание вещи (например: платье летнее, пальто зимнее):")
-        await state.update_data(photo=photo_data, status_msg=status_msg)
-        await state.set_state(GeneratePhoto.name)
-        
-    except Exception as e:
-        await status_msg.edit_text(f"❌ Ошибка: {str(e)}\n\nПопробуй ещё раз.", reply_markup=main_menu())
-        await state.clear()
-
-@dp.message(GeneratePhoto.name)
-async def generate_photo_with_description(message: Message, state: FSMContext):
-    data = await state.get_data()
-    photo_data = data.get("photo")
-    status_msg = data.get("status_msg")
-    description = message.text.strip()
-    
-    if not photo_data:
-        await message.answer("❌ Что-то пошло не так. Попробуй заново через кнопку.", reply_markup=main_menu())
-        await state.clear()
-        return
-    
-    try:
-        await status_msg.edit_text("🔄 Генерирую фото на манекене... Это займёт 15-30 секунд.")
-        
-        result = await generate_mannequin_photo(photo_data, description)
-        
-        if result:
-            await status_msg.delete()
-            await message.answer_photo(
-                BufferedInputFile(result, filename="mannequin.jpg"),
-                caption=(
-                    f"✅ <b>Готово!</b>\n\n"
-                    f"📌 <b>Описание:</b> {description}\n\n"
-                    "Вот твоя вещь на манекене!\n"
-                    "Сохрани фото и выкладывай на Авито! 📸"
-                ),
-                parse_mode="HTML",
-                reply_markup=main_menu()
-            )
-        else:
-            await status_msg.edit_text(
-                "❌ Не удалось сгенерировать фото.\n\n"
-                "⚠️ Возможные причины:\n"
-                "• Фото слишком тёмное или размытое\n"
-                "• Нет свободных токенов в Gemini\n"
-                "• Проблемы с сетью\n\n"
-                "Попробуй с другим фото или позже.",
-                reply_markup=main_menu()
-            )
-    except Exception as e:
-        await status_msg.edit_text(f"❌ Ошибка: {str(e)}\n\nПопробуй ещё раз.", reply_markup=main_menu())
-    
-    await state.clear()
 
 # ========== ДОБАВЛЕНИЕ ВЕЩИ ==========
 @dp.callback_query(lambda c: c.data == "add_item_menu")
@@ -723,7 +670,7 @@ async def show_scripts(callback: CallbackQuery, state: FSMContext):
 
 # ========== ЗАПУСК ==========
 async def main():
-    print("✅ Бот с Gemini запущен!")
+    print("✅ Бот с библиотекой промтов запущен!")
     asyncio.create_task(check_reminders())
     await dp.start_polling(bot)
 
