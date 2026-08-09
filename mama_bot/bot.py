@@ -1,24 +1,39 @@
 import asyncio
 import logging
 import random
+import io
+import base64
+import os
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+import aiohttp
 
-# ========== ТОКЕН (УЖЕ ВСТАВЛЕН) ==========
-TOKEN = "8740387123:AAHET8K33FpV0XRAAu2rIubP3zM4qTA01Yk"
+# ========== ТОКЕНЫ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ ==========
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8740387123:AAHET8K33FpV0XRAAu2rIubP3zM4qTA01Yk")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6K9ZVPPUU4k24ooet9wixfRATN1respYNW7oU9sahcoAQ")
+DATA_DIR = os.getenv("DATA_DIR", "/app/data")
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token=TOKEN)
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 user_data = {}
 
 # ========== ПРОМТ ДЛЯ МАНЕКЕНА ==========
-MANNEQUIN_PROMPT = """Take this garment and realistically place it on a minimalist white female mannequin torso (matte finish, headless). Pure white (hex #FFFFFF) studio background. Keep the exact shape, folds, draping, fabric texture, and colors of the garment exactly as they are — do not change the fit, silhouette, or any design details. The garment should look like it naturally fits the mannequin without any distortion. Add soft, diffused studio lighting from the left and right to create natural shadows that highlight the garment's volume and flow, giving a premium 3D look. Do not alter the garment itself — only improve the lighting, clarity, and background. The mannequin must be visible and realistic. High resolution, 8k, hyper-realistic, luxury fashion catalog quality, sharp focus on fabric texture, seams and labels."""
+MANNEQUIN_PROMPT = """Take this exact garment from the photo and realistically place it on a minimalist white female mannequin torso (matte finish, headless, no visible joints). Pure white (hex #FFFFFF) seamless studio background.
+
+CRITICAL REQUIREMENTS:
+1. Keep the exact shape, folds, draping, fabric texture, and colors of the garment exactly as they are — do NOT change the fit, silhouette, or any design details.
+2. All internal tags, labels, seams, and stitching must remain INSIDE the garment and NOT be visible on the front or exterior.
+3. The garment should look like it naturally fits the mannequin without any distortion.
+4. Add soft, diffused studio lighting from the left and right to create natural shadows that highlight the garment's volume and flow, giving a premium 3D look.
+5. Do NOT alter the garment itself — only improve the lighting, clarity, and background.
+
+The result should look like a luxury e-commerce product photo from a high-end brand. High resolution, hyper-realistic, commercial catalog quality, sharp focus on fabric texture, seams and labels."""
 
 # ========== ГЛАВНОЕ МЕНЮ ==========
 def main_menu():
@@ -30,7 +45,7 @@ def main_menu():
         [InlineKeyboardButton(text="➕ Добавить вещь", callback_data="add_item_menu")],
         [InlineKeyboardButton(text="🔍 Поиск вещи", callback_data="search_item")],
         [InlineKeyboardButton(text="🗣 Готовые фразы", callback_data="scripts")],
-        [InlineKeyboardButton(text="🤖 Промт для манекена", callback_data="mannequin_prompt")]
+        [InlineKeyboardButton(text="🤖 Сгенерировать фото на манекене", callback_data="generate_photo")]
     ])
     return kb
 
@@ -40,8 +55,14 @@ def back_button():
     ])
     return kb
 
+def dialog_back_button(callback_data):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data=callback_data)]
+    ])
+    return kb
+
 # ========== СОСТОЯНИЯ ==========
-class MannequinForm(StatesGroup):
+class GeneratePhoto(StatesGroup):
     photo = State()
     name = State()
 
@@ -60,23 +81,48 @@ class SaleForm(StatesGroup):
 class SearchForm(StatesGroup):
     query = State()
 
-# ========== ФУНКЦИЯ ОПРЕДЕЛЕНИЯ КАТЕГОРИИ ==========
-def detect_category(text):
-    text_lower = text.lower()
-    keywords = {
-        "dress": ["плать", "сарафан", "туника"],
-        "coat": ["пальт", "куртк", "пухов", "шуба", "дубленк"],
-        "pants": ["джинс", "брюк", "штаны", "леггинс"],
-        "sweater": ["кофт", "свитер", "джемпер", "пуловер", "кардиган"],
-        "shirt": ["рубашк", "блузк", "сорочк"],
-        "short": ["шорт", "юбк", "бермуд"]
+# ========== ФУНКЦИЯ ДЛЯ РАБОТЫ С GEMINI ==========
+async def generate_mannequin_photo(photo_bytes, description="одежда"):
+    """Отправляет фото в Gemini и возвращает сгенерированное изображение"""
+    
+    photo_base64 = base64.b64encode(photo_bytes).decode('utf-8')
+    prompt = MANNEQUIN_PROMPT + f"\n\nGarment description: {description}"
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inline_data": {
+                            "mime_type": "image/jpeg",
+                            "data": photo_base64
+                        }
+                    }
+                ]
+            }
+        ]
     }
     
-    for category, words in keywords.items():
-        for word in words:
-            if word in text_lower:
-                return category
-    return "default"
+    headers = {"Content-Type": "application/json"}
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, headers=headers) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    try:
+                        image_data = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("inline_data", {}).get("data")
+                        if image_data:
+                            return base64.b64decode(image_data)
+                    except:
+                        pass
+                return None
+    except Exception as e:
+        logging.error(f"Ошибка при генерации: {e}")
+        return None
 
 # ========== НАПОМИНАНИЯ ==========
 async def check_reminders():
@@ -138,16 +184,17 @@ async def start(message: Message, state: FSMContext):
         }
     await message.answer(
         "👋 Мама, я твой умный бизнес-секретарь!\n"
-        "Я помню каждую вещь, считаю деньги, напоминаю о планах и помогаю создавать крутые фото.\n\n"
+        "Я помню каждую вещь, считаю деньги, напоминаю о планах и создаю крутые фото на манекене.\n\n"
         "⬇️ Выбери действие:",
         reply_markup=main_menu()
     )
 
-# ========== НАЗАД ==========
+# ========== НАЗАД В МЕНЮ (НОВЫМ СООБЩЕНИЕМ) ==========
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         "👋 Главное меню:\n\n⬇️ Выбери действие:",
         reply_markup=main_menu()
     )
@@ -171,88 +218,98 @@ async def show_strategy(callback: CallbackQuery, state: FSMContext):
         "5️⃣ Добавь все продажи в бота\n\n"
         "🔥 <b>Совет:</b> Если вещь не продаётся 2 недели — отдай за 199 ₽"
     )
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_button())
+    await callback.message.delete()
+    await callback.message.answer(text, parse_mode="HTML", reply_markup=back_button())
     await callback.answer()
 
-# ========== МАНЕКЕН ПРОМТ ==========
-@dp.callback_query(lambda c: c.data == "mannequin_prompt")
-async def mannequin_prompt_start(callback: CallbackQuery, state: FSMContext):
+# ========== ГЕНЕРАЦИЯ ФОТО НА МАНЕКЕНЕ ==========
+@dp.callback_query(lambda c: c.data == "generate_photo")
+async def generate_photo_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text(
-        "🤖 <b>Генерация промта для манекена</b>\n\n"
-        "Отправь мне <b>фото вещи</b> (одно фото, общий вид).\n"
-        "Я определю категорию и выдам готовый промт для Nano Banana.\n\n"
-        "📌 <b>Инструкция после получения промта:</b>\n"
-        "1️⃣ Скопируй промт\n"
-        "2️⃣ Вставь в Nano Banana\n"
-        "3️⃣ Загрузи это же фото\n"
-        "4️⃣ Нажми «Сгенерировать»\n\n"
-        "✨ Получишь фото вещи на манекене с белым фоном!",
+    await callback.message.delete()
+    await callback.message.answer(
+        "🤖 <b>Генерация фото на манекене</b>\n\n"
+        "Отправь мне <b>фото вещи</b> (одно фото, общий вид на вешалке).\n"
+        "Я сгенерирую фото на манекене с белым фоном.\n\n"
+        "⏳ Обычно это занимает 15-30 секунд.\n"
+        "Пожалуйста, подожди!",
         parse_mode="HTML",
         reply_markup=back_button()
     )
-    await state.set_state(MannequinForm.photo)
+    await state.set_state(GeneratePhoto.photo)
     await callback.answer()
 
-@dp.message(MannequinForm.photo, F.photo)
-async def mannequin_prompt_photo_received(message: Message, state: FSMContext):
-    photo_id = message.photo[-1].file_id
-    await state.update_data(photo=photo_id)
-    await message.answer(
-        "📝 Напиши <b>название вещи</b> (например: Платье летнее, Пальто зимнее).\n"
-        "Это поможет сделать промт точнее.",
-        parse_mode="HTML",
-        reply_markup=back_button()
-    )
-    await state.set_state(MannequinForm.name)
+@dp.message(GeneratePhoto.photo, F.photo)
+async def generate_photo_process(message: Message, state: FSMContext):
+    status_msg = await message.answer("📸 Фото получено! Начинаю генерацию... ⏳")
+    
+    try:
+        photo = message.photo[-1]
+        file = await bot.get_file(photo.file_id)
+        photo_bytes = await bot.download_file(file.file_path)
+        photo_data = photo_bytes.read()
+        
+        await status_msg.edit_text("📝 Напиши краткое описание вещи (например: платье летнее, пальто зимнее):")
+        await state.update_data(photo=photo_data, status_msg=status_msg)
+        await state.set_state(GeneratePhoto.name)
+        
+    except Exception as e:
+        await status_msg.edit_text(f"❌ Ошибка: {str(e)}\n\nПопробуй ещё раз.", reply_markup=main_menu())
+        await state.clear()
 
-@dp.message(MannequinForm.name)
-async def mannequin_prompt_final(message: Message, state: FSMContext):
+@dp.message(GeneratePhoto.name)
+async def generate_photo_with_description(message: Message, state: FSMContext):
     data = await state.get_data()
-    photo_id = data.get("photo")
+    photo_data = data.get("photo")
+    status_msg = data.get("status_msg")
     description = message.text.strip()
     
-    category = detect_category(description)
-    category_names = {
-        "dress": "👗 Платье",
-        "coat": "🧥 Пальто/Куртка",
-        "pants": "👖 Джинсы/Брюки",
-        "sweater": "👚 Кофта/Свитер",
-        "shirt": "👕 Рубашка/Блузка",
-        "short": "🩳 Шорты/Юбка",
-        "default": "👔 Другое"
-    }
+    if not photo_data:
+        await message.answer("❌ Что-то пошло не так. Попробуй заново через кнопку.", reply_markup=main_menu())
+        await state.clear()
+        return
     
-    full_prompt = f"{MANNEQUIN_PROMPT}\n\nGarment description: {description} (category: {category_names.get(category, 'Другое')})"
+    try:
+        await status_msg.edit_text("🔄 Генерирую фото на манекене... Это займёт 15-30 секунд.")
+        
+        result = await generate_mannequin_photo(photo_data, description)
+        
+        if result:
+            await status_msg.delete()
+            await message.answer_photo(
+                BufferedInputFile(result, filename="mannequin.jpg"),
+                caption=(
+                    f"✅ <b>Готово!</b>\n\n"
+                    f"📌 <b>Описание:</b> {description}\n\n"
+                    "Вот твоя вещь на манекене!\n"
+                    "Сохрани фото и выкладывай на Авито! 📸"
+                ),
+                parse_mode="HTML",
+                reply_markup=main_menu()
+            )
+        else:
+            await status_msg.edit_text(
+                "❌ Не удалось сгенерировать фото.\n\n"
+                "⚠️ Возможные причины:\n"
+                "• Фото слишком тёмное или размытое\n"
+                "• Нет свободных токенов в Gemini\n"
+                "• Проблемы с сетью\n\n"
+                "Попробуй с другим фото или позже.",
+                reply_markup=main_menu()
+            )
+    except Exception as e:
+        await status_msg.edit_text(f"❌ Ошибка: {str(e)}\n\nПопробуй ещё раз.", reply_markup=main_menu())
     
-    await message.answer_photo(
-        photo_id,
-        caption=(
-            f"🤖 <b>Промт для манекена готов!</b>\n\n"
-            f"📌 <b>Категория:</b> {category_names.get(category, 'Другое')}\n"
-            f"📝 <b>Описание:</b> {description}\n\n"
-            f"<b>⬇️ Скопируй этот промт в Nano Banana:</b>\n"
-            f"<code>{full_prompt}</code>\n\n"
-            "📌 <b>Инструкция:</b>\n"
-            "1️⃣ Скопируй текст выше\n"
-            "2️⃣ Вставь в Nano Banana\n"
-            "3️⃣ Загрузи фото, которое ты только что отправила\n"
-            "4️⃣ Нажми «Сгенерировать»\n\n"
-            "✨ Получишь фото вещи на манекене с белым фоном!"
-        ),
-        parse_mode="HTML",
-        reply_markup=main_menu()
-    )
     await state.clear()
 
 # ========== ДОБАВЛЕНИЕ ВЕЩИ ==========
 @dp.callback_query(lambda c: c.data == "add_item_menu")
 async def add_item_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         "📸 <b>Добавляем новую вещь</b>\n\n"
-        "Отправь мне <b>фото</b> вещи (одно фото).\n"
-        "После этого я спрошу название, размер, цвет и цену.",
+        "Отправь мне <b>фото</b> вещи (одно фото).",
         parse_mode="HTML",
         reply_markup=back_button()
     )
@@ -266,7 +323,7 @@ async def item_photo(message: Message, state: FSMContext):
     await message.answer(
         "📝 Напиши <b>название</b> вещи (например: Платье летнее):",
         parse_mode="HTML",
-        reply_markup=back_button()
+        reply_markup=dialog_back_button("add_item_menu")
     )
     await state.set_state(ItemForm.name)
 
@@ -276,7 +333,7 @@ async def item_name(message: Message, state: FSMContext):
     await message.answer(
         "📏 Напиши <b>размер</b> (46, M, L):",
         parse_mode="HTML",
-        reply_markup=back_button()
+        reply_markup=dialog_back_button("item_back_to_name")
     )
     await state.set_state(ItemForm.size)
 
@@ -286,7 +343,7 @@ async def item_size(message: Message, state: FSMContext):
     await message.answer(
         "🎨 Напиши <b>цвет</b>:",
         parse_mode="HTML",
-        reply_markup=back_button()
+        reply_markup=dialog_back_button("item_back_to_size")
     )
     await state.set_state(ItemForm.color)
 
@@ -296,7 +353,7 @@ async def item_color(message: Message, state: FSMContext):
     await message.answer(
         "🏷️ Напиши <b>категорию</b> (Платья, Кофты, Джинсы, Шорты, Куртки):",
         parse_mode="HTML",
-        reply_markup=back_button()
+        reply_markup=dialog_back_button("item_back_to_color")
     )
     await state.set_state(ItemForm.category)
 
@@ -306,7 +363,7 @@ async def item_category(message: Message, state: FSMContext):
     await message.answer(
         "💰 Напиши <b>цену</b> (число):",
         parse_mode="HTML",
-        reply_markup=back_button()
+        reply_markup=dialog_back_button("item_back_to_category")
     )
     await state.set_state(ItemForm.price)
 
@@ -341,8 +398,7 @@ async def save_item(message: Message, state: FSMContext):
                 f"📏 Размер: {data.get('size')}\n"
                 f"🎨 Цвет: {data.get('color')}\n"
                 f"🏷️ Категория: {data.get('category')}\n"
-                f"💰 Цена: {price} ₽\n"
-                f"📅 Добавлена: {datetime.now().strftime('%d.%m.%Y')}"
+                f"💰 Цена: {price} ₽"
             ),
             parse_mode="HTML",
             reply_markup=main_menu()
@@ -351,8 +407,64 @@ async def save_item(message: Message, state: FSMContext):
     except ValueError:
         await message.answer(
             "❌ Ошибка! Введи число, например: 1200",
-            reply_markup=back_button()
+            reply_markup=dialog_back_button("item_back_to_price")
         )
+
+# ========== ОБРАБОТЧИКИ ВОЗВРАТА НА ШАГ ==========
+@dp.callback_query(lambda c: c.data == "item_back_to_name")
+async def back_to_name(callback: CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await callback.message.answer(
+        "📝 Напиши <b>название</b> вещи:",
+        parse_mode="HTML",
+        reply_markup=dialog_back_button("add_item_menu")
+    )
+    await state.set_state(ItemForm.name)
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "item_back_to_size")
+async def back_to_size(callback: CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await callback.message.answer(
+        "📏 Напиши <b>размер</b> (46, M, L):",
+        parse_mode="HTML",
+        reply_markup=dialog_back_button("item_back_to_name")
+    )
+    await state.set_state(ItemForm.size)
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "item_back_to_color")
+async def back_to_color(callback: CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await callback.message.answer(
+        "🎨 Напиши <b>цвет</b>:",
+        parse_mode="HTML",
+        reply_markup=dialog_back_button("item_back_to_size")
+    )
+    await state.set_state(ItemForm.color)
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "item_back_to_category")
+async def back_to_category(callback: CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await callback.message.answer(
+        "🏷️ Напиши <b>категорию</b> (Платья, Кофты, Джинсы, Шорты, Куртки):",
+        parse_mode="HTML",
+        reply_markup=dialog_back_button("item_back_to_color")
+    )
+    await state.set_state(ItemForm.category)
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "item_back_to_price")
+async def back_to_price(callback: CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await callback.message.answer(
+        "💰 Напиши <b>цену</b> (число):",
+        parse_mode="HTML",
+        reply_markup=dialog_back_button("item_back_to_category")
+    )
+    await state.set_state(ItemForm.price)
+    await callback.answer()
 
 # ========== МОИ ВЕЩИ ==========
 @dp.callback_query(lambda c: c.data == "items")
@@ -363,7 +475,8 @@ async def show_items(callback: CallbackQuery, state: FSMContext):
     
     if not items:
         text = "📸 У тебя пока нет вещей в базе.\n\nДобавь первую вещь через кнопку «➕ Добавить вещь»"
-        await callback.message.edit_text(text, reply_markup=back_button())
+        await callback.message.delete()
+        await callback.message.answer(text, reply_markup=back_button())
         await callback.answer()
         return
     
@@ -386,7 +499,8 @@ async def show_items(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🔍 Поиск", callback_data="search_item")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
     ])
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         "📸 Последние добавленные вещи показаны выше.\n"
         "Что хочешь сделать дальше?",
         reply_markup=kb
@@ -407,14 +521,16 @@ async def show_items_list(callback: CallbackQuery, state: FSMContext):
     if not items:
         text = "📋 Пока нет ни одной вещи."
     
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_button())
+    await callback.message.delete()
+    await callback.message.answer(text, parse_mode="HTML", reply_markup=back_button())
     await callback.answer()
 
 # ========== ПОИСК ==========
 @dp.callback_query(lambda c: c.data == "search_item")
 async def search_item_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         "🔍 Напиши, что ищем:\n"
         "(Название, размер, цвет или категорию)",
         reply_markup=back_button()
@@ -457,7 +573,8 @@ async def search_item_result(message: Message, state: FSMContext):
 @dp.callback_query(lambda c: c.data == "sale")
 async def start_sale(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         "💰 Напиши <b>ID вещи</b>, которую продала.\n"
         "Посмотреть ID можно в разделе «Мои вещи».",
         parse_mode="HTML",
@@ -581,7 +698,8 @@ async def show_stats(callback: CallbackQuery, state: FSMContext):
         f"🛡️ Подушка: {money.get('pillow', 0)} ₽\n"
         f"✨ Мечта: {money.get('dream', 0)} ₽"
     )
-    await callback.message.edit_text(stats_text, parse_mode="HTML", reply_markup=back_button())
+    await callback.message.delete()
+    await callback.message.answer(stats_text, parse_mode="HTML", reply_markup=back_button())
     await callback.answer()
 
 # ========== СКРИПТЫ ==========
@@ -599,12 +717,13 @@ async def show_scripts(callback: CallbackQuery, state: FSMContext):
         "4️⃣ <b>Закрытие сделки:</b>\n"
         "«Посылка у вас! Если всё понравилось — оставьте отзыв. Заходите ещё!»"
     )
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_button())
+    await callback.message.delete()
+    await callback.message.answer(text, parse_mode="HTML", reply_markup=back_button())
     await callback.answer()
 
 # ========== ЗАПУСК ==========
 async def main():
-    print("✅ Бот с манекен-промтами запущен!")
+    print("✅ Бот с Gemini запущен!")
     asyncio.create_task(check_reminders())
     await dp.start_polling(bot)
 
