@@ -12,10 +12,12 @@ from aiogram.fsm.state import State, StatesGroup
 
 # ========== ТОКЕН ==========
 BOT_TOKEN = "8740387123:AAHET8K33FpV0XRAAu2rIubP3zM4qTA01Yk"
-DATA_FILE = "user_data.json"
+
+# ========== ПУТЬ К ФАЙЛУ В ПАПКЕ DATA ==========
+DATA_FILE = os.path.join(os.path.dirname(__file__), "data", "user_data.json")
 
 # ========== СПИСОК РАЗРЕШЁННЫХ ПОЛЬЗОВАТЕЛЕЙ ==========
-ALLOWED_USERS = ["6663434089", "602370918"]  # Твой ID и мамин ID
+ALLOWED_USERS = ["6663434089", "602370918"]
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
@@ -32,6 +34,8 @@ def load_data():
     return {}
 
 def save_data(data):
+    # Создаём папку data, если её нет
+    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -39,11 +43,9 @@ user_data = load_data()
 
 # ========== ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ДОСТУПА ==========
 def ensure_user(user_id):
-    """Проверяет, есть ли пользователь в списке разрешённых"""
     if user_id not in ALLOWED_USERS:
         return False
     
-    # Если общая база ещё не создана — создаём
     if "shared" not in user_data:
         user_data["shared"] = {
             "items": [],
@@ -53,7 +55,6 @@ def ensure_user(user_id):
         }
         save_data(user_data)
     
-    # Добавляем пользователя в список, если его там нет
     if "users" not in user_data:
         user_data["users"] = []
     if user_id not in user_data["users"]:
@@ -64,7 +65,6 @@ def ensure_user(user_id):
 
 # ========== ФУНКЦИЯ ДЛЯ ПЕРЕСЧЁТА КОНВЕРТОВ ==========
 def recalculate_money():
-    """Пересчитывает деньги из всех продаж заново"""
     if "shared" not in user_data:
         return
     sales = user_data["shared"].get("sales", [])
@@ -860,7 +860,6 @@ async def confirm_delete_item(callback: CallbackQuery, state: FSMContext):
     sales = user_data["shared"].get("sales", [])
     user_data["shared"]["sales"] = [s for s in sales if s.get("item_id") != item_id]
     
-    # Пересчитываем деньги из оставшихся продаж
     recalculate_money()
     save_data(user_data)
     
@@ -1176,10 +1175,8 @@ async def undo_last_sale(callback: CallbackQuery, state: FSMContext):
     item_name = last_sale.get("name", "Без названия")
     price = last_sale.get("price", 0)
     
-    # Удаляем последнюю продажу
     user_data["shared"]["sales"] = sales[:-1]
     
-    # Возвращаем вещь в активные (если она ещё есть в списке)
     for item in user_data["shared"]["items"]:
         if item.get("id") == item_id:
             item["status"] = "active"
