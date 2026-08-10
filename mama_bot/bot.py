@@ -13,8 +13,8 @@ from aiogram.fsm.state import State, StatesGroup
 # ========== ТОКЕН ==========
 BOT_TOKEN = "8740387123:AAHET8K33FpV0XRAAu2rIubP3zM4qTA01Yk"
 
-# ========== ПУТЬ К ФАЙЛУ В ПАПКЕ DATA ==========
-DATA_FILE = os.path.join(os.path.dirname(__file__), "data", "user_data.json")
+# ========== ЖЁСТКИЙ ПУТЬ К ФАЙЛУ ==========
+DATA_FILE = "/app/data/user_data.json"
 
 # ========== СПИСОК РАЗРЕШЁННЫХ ПОЛЬЗОВАТЕЛЕЙ ==========
 ALLOWED_USERS = ["6663434089", "602370918"]
@@ -23,18 +23,24 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ========== ХРАНИЛИЩЕ ==========
+# ========== ХРАНИЛИЩЕ С ОТЛАДКОЙ ==========
 def load_data():
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
+                data = json.load(f)
+                logging.info(f"✅ Файл загружен, ключи: {list(data.keys())}")
+                if "shared" in data:
+                    logging.info(f"✅ В shared лежит {len(data['shared'].get('items', []))} вещей")
+                return data
+        except Exception as e:
+            logging.error(f"❌ Ошибка загрузки: {e}")
             return {}
-    return {}
+    else:
+        logging.warning(f"⚠️ Файл не найден: {DATA_FILE}")
+        return {}
 
 def save_data(data):
-    # Создаём папку data, если её нет
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -44,9 +50,11 @@ user_data = load_data()
 # ========== ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ДОСТУПА ==========
 def ensure_user(user_id):
     if user_id not in ALLOWED_USERS:
+        logging.warning(f"⚠️ Доступ запрещён для {user_id}")
         return False
     
     if "shared" not in user_data:
+        logging.warning("⚠️ В user_data нет shared, создаю новый")
         user_data["shared"] = {
             "items": [],
             "sales": [],
@@ -61,6 +69,7 @@ def ensure_user(user_id):
         user_data["users"].append(user_id)
         save_data(user_data)
     
+    logging.info(f"✅ Пользователь {user_id} авторизован, вещей: {len(user_data['shared'].get('items', []))}")
     return True
 
 # ========== ФУНКЦИЯ ДЛЯ ПЕРЕСЧЁТА КОНВЕРТОВ ==========
@@ -853,10 +862,8 @@ async def confirm_delete_item(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     
-    # Удаляем вещь
     user_data["shared"]["items"] = [i for i in items if i.get("id") != item_id]
     
-    # Удаляем все продажи, связанные с этой вещью
     sales = user_data["shared"].get("sales", [])
     user_data["shared"]["sales"] = [s for s in sales if s.get("item_id") != item_id]
     
