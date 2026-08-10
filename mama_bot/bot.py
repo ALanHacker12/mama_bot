@@ -61,6 +61,14 @@ def recalculate_money(user_id):
         money["dream"] += int(price * 0.05)
     user_data[user_id]["money"] = money
 
+# ========== ФУНКЦИЯ ДЛЯ ПОИСКА ДАННЫХ ДРУГОГО ПОЛЬЗОВАТЕЛЯ ==========
+def find_other_user_data(current_user_id):
+    """Ищет данные другого пользователя (для восстановления)"""
+    for user_id, data in user_data.items():
+        if user_id != current_user_id and data.get("items"):
+            return user_id, data
+    return None, None
+
 # ========== БИБЛИОТЕКА ПРОМТОВ ==========
 PROMPTS = {
     "dress": {"name": "👗 Платье", "text": """Professional fashion photography. A beautiful women's dress perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details."""},
@@ -189,11 +197,39 @@ async def check_reminders():
                     pass
         await asyncio.sleep(30)
 
-# ========== СТАРТ ==========
+# ========== СТАРТ С ВОССТАНОВЛЕНИЕМ ==========
 @dp.message(Command("start"))
 async def start(message: Message, state: FSMContext):
     await state.clear()
     user_id = str(message.from_user.id)
+    
+    # Если у пользователя уже есть данные — просто показываем меню
+    if user_id in user_data:
+        await message.answer(
+            "👋 Мама, я твой умный бизнес-секретарь!\n"
+            "Я помню каждую вещь, считаю деньги, напоминаю о планах и даю готовые промты для фото на манекене.\n\n"
+            "⬇️ Выбери действие:",
+            reply_markup=main_menu()
+        )
+        return
+    
+    # Если у пользователя нет данных, но есть данные других пользователей — предлагаем восстановить
+    other_id, other_data = find_other_user_data(user_id)
+    if other_id and other_data and other_data.get("items"):
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Восстановить мои вещи", callback_data=f"restore_{other_id}")],
+            [InlineKeyboardButton(text="🆕 Начать с нуля", callback_data="start_fresh")]
+        ])
+        await message.answer(
+            "👋 Привет! Я вижу, что ты уже добавляла вещи раньше, но сейчас я тебя не узнаю.\n\n"
+            f"📦 У меня есть твои вещи: {len(other_data.get('items', []))} шт.\n"
+            f"💰 Продаж: {len(other_data.get('sales', []))}\n\n"
+            "Ты хочешь восстановить свои старые вещи или начать с чистого листа?",
+            reply_markup=kb
+        )
+        return
+    
+    # Если данных ни у кого нет — создаём нового пользователя
     ensure_user(user_id)
     await message.answer(
         "👋 Мама, я твой умный бизнес-секретарь!\n"
@@ -201,6 +237,66 @@ async def start(message: Message, state: FSMContext):
         "⬇️ Выбери действие:",
         reply_markup=main_menu()
     )
+
+# ========== ВОССТАНОВЛЕНИЕ ДАННЫХ ==========
+@dp.callback_query(lambda c: c.data.startswith("restore_"))
+async def restore_data(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    new_user_id = str(callback.from_user.id)
+    old_user_id = callback.data.split("_")[1]
+    
+    # Проверяем, есть ли данные у старого пользователя
+    if old_user_id not in user_data:
+        await callback.message.delete()
+        await callback.message.answer("❌ Не удалось найти данные для восстановления.", reply_markup=main_menu())
+        await callback.answer()
+        return
+    
+    old_data = user_data[old_user_id]
+    
+    # Копируем данные из старого ID в новый
+    user_data[new_user_id] = {
+        "items": old_data.get("items", []),
+        "sales": old_data.get("sales", []),
+        "money": old_data.get("money", {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0}),
+        "item_counter": old_data.get("item_counter", 1)
+    }
+    
+    # Удаляем старые данные (чтобы не было дублей)
+    del user_data[old_user_id]
+    save_data(user_data)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"✅ <b>Данные восстановлены!</b>\n\n"
+        f"📦 Вещей: {len(user_data[new_user_id].get('items', []))} шт.\n"
+        f"💰 Продаж: {len(user_data[new_user_id].get('sales', []))}\n\n"
+        "Теперь ты можешь продолжить работу с того места, где остановилась!",
+        parse_mode="HTML",
+        reply_markup=main_menu()
+    )
+    await callback.answer()
+
+# ========== НАЧАТЬ С НУЛЯ ==========
+@dp.callback_query(lambda c: c.data == "start_fresh")
+async def start_fresh(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = str(callback.from_user.id)
+    
+    # Создаём нового пользователя с пустыми данными
+    ensure_user(user_id)
+    save_data(user_data)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        "🆕 <b>Начинаем с чистого листа!</b>\n\n"
+        "Все старые данные остались в файле, но теперь ты начинаешь с нуля.\n"
+        "Если захочешь восстановить старые вещи — просто удали переписку и напиши /start снова.\n\n"
+        "⬇️ Выбери действие:",
+        parse_mode="HTML",
+        reply_markup=main_menu()
+    )
+    await callback.answer()
 
 # ========== НАЗАД В ГЛАВНОЕ МЕНЮ ==========
 @dp.callback_query(lambda c: c.data == "back_to_menu")
@@ -972,7 +1068,7 @@ async def show_scripts(callback: CallbackQuery, state: FSMContext):
 
 # ========== ЗАПУСК ==========
 async def main():
-    print("✅ Бот с удалением и отменой продаж запущен!")
+    print("✅ Бот с восстановлением данных запущен!")
     asyncio.create_task(check_reminders())
     await dp.start_polling(bot)
 
