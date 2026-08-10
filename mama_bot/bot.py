@@ -47,6 +47,20 @@ def ensure_user(user_id):
         return True
     return False
 
+# ========== ФУНКЦИЯ ДЛЯ ПЕРЕСЧЁТА КОНВЕРТОВ ==========
+def recalculate_money(user_id):
+    """Пересчитывает деньги из всех продаж заново"""
+    sales = user_data[user_id].get("sales", [])
+    money = {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0}
+    for sale in sales:
+        price = sale.get("price", 0)
+        money["salary"] += int(price * 0.3)
+        money["turnover"] += int(price * 0.4)
+        money["post"] += int(price * 0.15)
+        money["pillow"] += int(price * 0.1)
+        money["dream"] += int(price * 0.05)
+    user_data[user_id]["money"] = money
+
 # ========== БИБЛИОТЕКА ПРОМТОВ ==========
 PROMPTS = {
     "dress": {"name": "👗 Платье", "text": """Professional fashion photography. A beautiful women's dress perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details."""},
@@ -98,15 +112,18 @@ def prompt_category_menu():
     ])
     return kb
 
-def edit_item_menu(item_id):
+def item_actions_menu(item_id):
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Изменить название", callback_data=f"edit_name_{item_id}")],
-        [InlineKeyboardButton(text="📏 Изменить размер", callback_data=f"edit_size_{item_id}")],
-        [InlineKeyboardButton(text="🎨 Изменить цвет", callback_data=f"edit_color_{item_id}")],
-        [InlineKeyboardButton(text="🏷️ Изменить категорию", callback_data=f"edit_category_{item_id}")],
-        [InlineKeyboardButton(text="🏷️ Изменить теги", callback_data=f"edit_tags_{item_id}")],
-        [InlineKeyboardButton(text="💰 Изменить цену", callback_data=f"edit_price_{item_id}")],
+        [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_item_{item_id}")],
+        [InlineKeyboardButton(text="❌ Удалить вещь", callback_data=f"delete_item_{item_id}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_items")]
+    ])
+    return kb
+
+def confirm_delete_menu(item_id):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"confirm_delete_{item_id}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data=f"cancel_delete_{item_id}")]
     ])
     return kb
 
@@ -471,12 +488,25 @@ async def edit_item_menu_handler(callback: CallbackQuery, state: FSMContext):
         f"🎨 Цвет: {item['color']}\n"
         f"🏷️ Категория: {item['category']}\n"
         f"🏷️ Теги: {item.get('tags', 'нет')}\n"
-        f"💰 Цена: {item['price']} ₽\n\n"
+        f"💰 Цена: {item['price']} ₽\n"
+        f"📌 Статус: {item.get('status', 'активна')}\n\n"
         "⬇️ Выбери, что хочешь изменить:",
         parse_mode="HTML",
         reply_markup=edit_item_menu(item_id)
     )
     await callback.answer()
+
+def edit_item_menu(item_id):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📝 Изменить название", callback_data=f"edit_name_{item_id}")],
+        [InlineKeyboardButton(text="📏 Изменить размер", callback_data=f"edit_size_{item_id}")],
+        [InlineKeyboardButton(text="🎨 Изменить цвет", callback_data=f"edit_color_{item_id}")],
+        [InlineKeyboardButton(text="🏷️ Изменить категорию", callback_data=f"edit_category_{item_id}")],
+        [InlineKeyboardButton(text="🏷️ Изменить теги", callback_data=f"edit_tags_{item_id}")],
+        [InlineKeyboardButton(text="💰 Изменить цену", callback_data=f"edit_price_{item_id}")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_items")]
+    ])
+    return kb
 
 @dp.callback_query(lambda c: c.data.startswith("edit_name_"))
 async def edit_name_start(callback: CallbackQuery, state: FSMContext):
@@ -486,11 +516,7 @@ async def edit_name_start(callback: CallbackQuery, state: FSMContext):
     item_id = int(callback.data.split("_")[2])
     await state.update_data(item_id=item_id, field="name")
     await callback.message.delete()
-    await callback.message.answer(
-        "📝 Напиши <b>новое название</b> для вещи:",
-        parse_mode="HTML",
-        reply_markup=back_button(f"edit_item_{item_id}")
-    )
+    await callback.message.answer("📝 Напиши <b>новое название</b> для вещи:", parse_mode="HTML", reply_markup=back_button(f"edit_item_{item_id}"))
     await state.set_state(EditForm.value)
     await callback.answer()
 
@@ -502,11 +528,7 @@ async def edit_size_start(callback: CallbackQuery, state: FSMContext):
     item_id = int(callback.data.split("_")[2])
     await state.update_data(item_id=item_id, field="size")
     await callback.message.delete()
-    await callback.message.answer(
-        "📏 Напиши <b>новый размер</b> (46, M, L):",
-        parse_mode="HTML",
-        reply_markup=back_button(f"edit_item_{item_id}")
-    )
+    await callback.message.answer("📏 Напиши <b>новый размер</b> (46, M, L):", parse_mode="HTML", reply_markup=back_button(f"edit_item_{item_id}"))
     await state.set_state(EditForm.value)
     await callback.answer()
 
@@ -518,11 +540,7 @@ async def edit_color_start(callback: CallbackQuery, state: FSMContext):
     item_id = int(callback.data.split("_")[2])
     await state.update_data(item_id=item_id, field="color")
     await callback.message.delete()
-    await callback.message.answer(
-        "🎨 Напиши <b>новый цвет</b>:",
-        parse_mode="HTML",
-        reply_markup=back_button(f"edit_item_{item_id}")
-    )
+    await callback.message.answer("🎨 Напиши <b>новый цвет</b>:", parse_mode="HTML", reply_markup=back_button(f"edit_item_{item_id}"))
     await state.set_state(EditForm.value)
     await callback.answer()
 
@@ -534,11 +552,7 @@ async def edit_category_start(callback: CallbackQuery, state: FSMContext):
     item_id = int(callback.data.split("_")[2])
     await state.update_data(item_id=item_id, field="category")
     await callback.message.delete()
-    await callback.message.answer(
-        "🏷️ Напиши <b>новую категорию</b> (Платья, Кофты, Джинсы, Шорты, Куртки):",
-        parse_mode="HTML",
-        reply_markup=back_button(f"edit_item_{item_id}")
-    )
+    await callback.message.answer("🏷️ Напиши <b>новую категорию</b> (Платья, Кофты, Джинсы, Шорты, Куртки):", parse_mode="HTML", reply_markup=back_button(f"edit_item_{item_id}"))
     await state.set_state(EditForm.value)
     await callback.answer()
 
@@ -550,11 +564,7 @@ async def edit_tags_start(callback: CallbackQuery, state: FSMContext):
     item_id = int(callback.data.split("_")[2])
     await state.update_data(item_id=item_id, field="tags")
     await callback.message.delete()
-    await callback.message.answer(
-        "🏷️ Напиши <b>новые теги</b> (через запятую). Если не хочешь — напиши «нет»:",
-        parse_mode="HTML",
-        reply_markup=back_button(f"edit_item_{item_id}")
-    )
+    await callback.message.answer("🏷️ Напиши <b>новые теги</b> (через запятую). Если не хочешь — напиши «нет»:", parse_mode="HTML", reply_markup=back_button(f"edit_item_{item_id}"))
     await state.set_state(EditForm.value)
     await callback.answer()
 
@@ -566,11 +576,7 @@ async def edit_price_start(callback: CallbackQuery, state: FSMContext):
     item_id = int(callback.data.split("_")[2])
     await state.update_data(item_id=item_id, field="price")
     await callback.message.delete()
-    await callback.message.answer(
-        "💰 Напиши <b>новую цену</b> (число):",
-        parse_mode="HTML",
-        reply_markup=back_button(f"edit_item_{item_id}")
-    )
+    await callback.message.answer("💰 Напиши <b>новую цену</b> (число):", parse_mode="HTML", reply_markup=back_button(f"edit_item_{item_id}"))
     await state.set_state(EditForm.value)
     await callback.answer()
 
@@ -591,7 +597,6 @@ async def save_edit_value(message: Message, state: FSMContext):
         await state.clear()
         return
     
-    # Обновляем поле
     if field == "price":
         try:
             new_value = int(new_value)
@@ -602,11 +607,9 @@ async def save_edit_value(message: Message, state: FSMContext):
         if new_value.lower() == "нет":
             new_value = ""
     
-    # Сохраняем
     item[field] = new_value
     save_data(user_data)
     
-    # Показываем обновлённую вещь
     await message.answer(
         f"✅ <b>Изменения сохранены!</b>\n\n"
         f"🆔 ID: {item['id']}\n"
@@ -629,7 +632,83 @@ async def back_to_items(callback: CallbackQuery, state: FSMContext):
     await callback.message.delete()
     await show_items(callback, state)
 
-# ========== МОИ ВЕЩИ (С КНОПКОЙ РЕДАКТИРОВАНИЯ) ==========
+# ========== УДАЛЕНИЕ ВЕЩИ ==========
+@dp.callback_query(lambda c: c.data.startswith("delete_item_"))
+async def delete_item_confirm(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
+    item_id = int(callback.data.split("_")[2])
+    
+    items = user_data.get(user_id, {}).get("items", [])
+    item = next((i for i in items if i.get("id") == item_id), None)
+    
+    if not item:
+        await callback.message.delete()
+        await callback.message.answer("❌ Вещь не найдена.", reply_markup=back_to_menu_button())
+        await callback.answer()
+        return
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"⚠️ <b>Ты уверена, что хочешь удалить вещь?</b>\n\n"
+        f"🆔 ID: {item['id']}\n"
+        f"📦 {item['name']}\n"
+        f"💰 Цена: {item['price']} ₽\n"
+        f"📌 Статус: {item.get('status', 'активна')}\n\n"
+        f"Если по этой вещи были продажи — они тоже будут удалены, и деньги из конвертов вернутся.",
+        parse_mode="HTML",
+        reply_markup=confirm_delete_menu(item_id)
+    )
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("confirm_delete_"))
+async def confirm_delete_item(callback: CallbackQuery, state: FSMContext):
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
+    item_id = int(callback.data.split("_")[2])
+    
+    items = user_data.get(user_id, {}).get("items", [])
+    item = next((i for i in items if i.get("id") == item_id), None)
+    
+    if not item:
+        await callback.message.delete()
+        await callback.message.answer("❌ Вещь не найдена.", reply_markup=back_to_menu_button())
+        await callback.answer()
+        return
+    
+    # Удаляем вещь
+    user_data[user_id]["items"] = [i for i in items if i.get("id") != item_id]
+    
+    # Удаляем все продажи, связанные с этой вещью
+    sales = user_data[user_id].get("sales", [])
+    user_data[user_id]["sales"] = [s for s in sales if s.get("item_id") != item_id]
+    
+    # Пересчитываем деньги из оставшихся продаж
+    recalculate_money(user_id)
+    save_data(user_data)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"✅ <b>Вещь удалена!</b>\n\n"
+        f"🆔 ID: {item['id']}\n"
+        f"📦 {item['name']}\n\n"
+        f"Все связанные продажи и их деньги убраны из статистики.",
+        parse_mode="HTML",
+        reply_markup=main_menu()
+    )
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("cancel_delete_"))
+async def cancel_delete_item(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
+    await callback.message.delete()
+    await callback.message.answer("❌ Удаление отменено.", reply_markup=main_menu())
+    await callback.answer()
+
+# ========== МОИ ВЕЩИ ==========
 @dp.callback_query(lambda c: c.data == "items")
 async def show_items(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -645,14 +724,12 @@ async def show_items(callback: CallbackQuery, state: FSMContext):
     
     for item in items[-5:]:
         if item.get("photo"):
-            caption = (f"🆔 <b>ID:</b> {item['id']}\n📦 {item['name']}\n📏 Размер: {item['size']}\n🎨 Цвет: {item['color']}\n🏷️ {item['category']}\n🏷️ Теги: {item.get('tags', 'нет')}\n💰 {item['price']} ₽\n📅 {item.get('created', '')}\n📌 {item.get('status', 'активна')}")
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_item_{item['id']}")],
-                [InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_menu")]
-            ])
-            await callback.message.answer_photo(item['photo'], caption=caption, parse_mode="HTML", reply_markup=kb)
+            status_emoji = "✅" if item.get("status") == "active" else "❌"
+            caption = (f"{status_emoji} <b>ID:</b> {item['id']}\n📦 {item['name']}\n📏 Размер: {item['size']}\n🎨 Цвет: {item['color']}\n🏷️ {item['category']}\n🏷️ Теги: {item.get('tags', 'нет')}\n💰 {item['price']} ₽\n📅 {item.get('created', '')}")
+            await callback.message.answer_photo(item['photo'], caption=caption, parse_mode="HTML", reply_markup=item_actions_menu(item['id']))
     
     total = len(items)
+    active = len([i for i in items if i.get("status") == "active"])
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"📋 Все вещи ({total} шт.)", callback_data="items_list")],
         [InlineKeyboardButton(text="🔍 Поиск", callback_data="search_item")],
@@ -660,7 +737,9 @@ async def show_items(callback: CallbackQuery, state: FSMContext):
     ])
     await callback.message.delete()
     await callback.message.answer(
-        f"📸 <b>Последние добавленные вещи</b>\nВсего вещей: {total}\n\nЧто хочешь сделать дальше?",
+        f"📸 <b>Последние добавленные вещи</b>\n"
+        f"Всего: {total} | ✅ Активных: {active}\n\n"
+        f"Что хочешь сделать дальше?",
         reply_markup=kb,
         parse_mode="HTML"
     )
@@ -713,10 +792,7 @@ async def search_item_result(message: Message, state: FSMContext):
         for item in found[:5]:
             if item.get("photo"):
                 caption = f"🆔 {item['id']} | {item['name']} | {item['size']} | {item['price']} ₽"
-                kb = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_item_{item['id']}")]
-                ])
-                await message.answer_photo(item['photo'], caption=caption, reply_markup=kb)
+                await message.answer_photo(item['photo'], caption=caption, reply_markup=item_actions_menu(item['id']))
         if len(found) > 5:
             await message.answer(f"...и ещё {len(found)-5} вещей. Уточни запрос для точного поиска.")
         await message.answer("🔍 Что-то ещё?", reply_markup=main_menu())
@@ -776,13 +852,9 @@ async def save_sale(message: Message, state: FSMContext):
             if item.get("id") == item_id:
                 item["status"] = "sold"
                 break
-        money = user_data[user_id]["money"]
-        money["salary"] += int(price * 0.3)
-        money["turnover"] += int(price * 0.4)
-        money["post"] += int(price * 0.15)
-        money["pillow"] += int(price * 0.1)
-        money["dream"] += int(price * 0.05)
+        recalculate_money(user_id)
         save_data(user_data)
+        
         await message.answer(
             f"✅ Продажа записана!\n\n🆔 Вещь #{item_id}\n📦 {item_name} — {price} ₽\n\n<b>Деньги разложены:</b>\n👩 Себе (30%): {int(price*0.3)} ₽\n📦 Оборот (40%): {int(price*0.4)} ₽\n📮 Почта (15%): {int(price*0.15)} ₽\n🛡️ Подушка (10%): {int(price*0.1)} ₽\n✨ Мечта (5%): {int(price*0.05)} ₽",
             parse_mode="HTML",
@@ -792,7 +864,7 @@ async def save_sale(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Ошибка! Введи число", reply_markup=back_to_menu_button())
 
-# ========== СТАТИСТИКА ==========
+# ========== СТАТИСТИКА (С КНОПКОЙ ОТМЕНЫ ПОСЛЕДНЕЙ ПРОДАЖИ) ==========
 @dp.callback_query(lambda c: c.data == "stats")
 async def show_stats(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -805,6 +877,7 @@ async def show_stats(callback: CallbackQuery, state: FSMContext):
     total_sales = len(sales)
     total_revenue = sum(s.get("price", 0) for s in sales)
     avg_price = int(total_revenue / total_sales) if total_sales > 0 else 0
+    
     categories = {}
     for item in items:
         cat = item.get("category", "Другое")
@@ -812,9 +885,60 @@ async def show_stats(callback: CallbackQuery, state: FSMContext):
     cat_text = ""
     for cat, count in list(categories.items())[:5]:
         cat_text += f"{cat}: {count} шт.\n"
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="↩️ Отменить последнюю продажу", callback_data="undo_last_sale")],
+        [InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_menu")]
+    ])
+    
     stats_text = (f"📊 <b>Твоя статистика</b>\n\n📦 Продано: {total_sales} шт.\n💰 Выручка: {total_revenue} ₽\n📈 Средний чек: {avg_price} ₽\n📸 Всего вещей: {len(items)} шт.\n\n<b>📂 Категории:</b>\n{cat_text or 'Пока нет'}\n<b>💰 Конверты:</b>\n👩 Себе: {money.get('salary', 0)} ₽\n📦 Оборот: {money.get('turnover', 0)} ₽\n📮 Почта: {money.get('post', 0)} ₽\n🛡️ Подушка: {money.get('pillow', 0)} ₽\n✨ Мечта: {money.get('dream', 0)} ₽")
     await callback.message.delete()
-    await callback.message.answer(stats_text, parse_mode="HTML", reply_markup=back_to_menu_button())
+    await callback.message.answer(stats_text, parse_mode="HTML", reply_markup=kb)
+    await callback.answer()
+
+# ========== ОТМЕНА ПОСЛЕДНЕЙ ПРОДАЖИ ==========
+@dp.callback_query(lambda c: c.data == "undo_last_sale")
+async def undo_last_sale(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
+    sales = user_data.get(user_id, {}).get("sales", [])
+    
+    if not sales:
+        await callback.message.delete()
+        await callback.message.answer("❌ Нет продаж, которые можно отменить.", reply_markup=back_to_menu_button())
+        await callback.answer()
+        return
+    
+    last_sale = sales[-1]
+    item_id = last_sale.get("item_id")
+    item_name = last_sale.get("name", "Без названия")
+    price = last_sale.get("price", 0)
+    
+    # Удаляем последнюю продажу
+    user_data[user_id]["sales"] = sales[:-1]
+    
+    # Возвращаем вещь в активные (если она ещё есть в списке)
+    for item in user_data[user_id]["items"]:
+        if item.get("id") == item_id:
+            item["status"] = "active"
+            break
+    
+    # Пересчитываем деньги
+    recalculate_money(user_id)
+    save_data(user_data)
+    
+    await callback.message.delete()
+    await callback.message.answer(
+        f"↩️ <b>Продажа отменена!</b>\n\n"
+        f"🆔 Вещь #{item_id}\n"
+        f"📦 {item_name}\n"
+        f"💰 {price} ₽\n\n"
+        f"Вещь возвращена в статус «активна».\n"
+        f"Деньги из этой продажи убраны из конвертов.",
+        parse_mode="HTML",
+        reply_markup=main_menu()
+    )
     await callback.answer()
 
 # ========== СКРИПТЫ ==========
@@ -830,7 +954,7 @@ async def show_scripts(callback: CallbackQuery, state: FSMContext):
 
 # ========== ЗАПУСК ==========
 async def main():
-    print("✅ Бот с редактированием запущен!")
+    print("✅ Бот с удалением и отменой продаж запущен!")
     asyncio.create_task(check_reminders())
     await dp.start_polling(bot)
 
