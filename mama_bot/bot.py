@@ -14,6 +14,9 @@ from aiogram.fsm.state import State, StatesGroup
 BOT_TOKEN = "8740387123:AAHET8K33FpV0XRAAu2rIubP3zM4qTA01Yk"
 DATA_FILE = "user_data.json"
 
+# ========== СПИСОК РАЗРЕШЁННЫХ ПОЛЬЗОВАТЕЛЕЙ ==========
+ALLOWED_USERS = ["6663434089", "602370918"]  # Твой ID и мамин ID
+
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -34,23 +37,37 @@ def save_data(data):
 
 user_data = load_data()
 
-# ========== ФУНКЦИЯ ДЛЯ ПРОВЕРКИ/СОЗДАНИЯ ПОЛЬЗОВАТЕЛЯ ==========
+# ========== ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ДОСТУПА ==========
 def ensure_user(user_id):
-    if user_id not in user_data:
-        user_data[user_id] = {
+    """Проверяет, есть ли пользователь в списке разрешённых"""
+    if user_id not in ALLOWED_USERS:
+        return False
+    
+    # Если общая база ещё не создана — создаём
+    if "shared" not in user_data:
+        user_data["shared"] = {
             "items": [],
             "sales": [],
             "money": {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0},
             "item_counter": 1
         }
         save_data(user_data)
-        return True
-    return False
+    
+    # Добавляем пользователя в список, если его там нет
+    if "users" not in user_data:
+        user_data["users"] = []
+    if user_id not in user_data["users"]:
+        user_data["users"].append(user_id)
+        save_data(user_data)
+    
+    return True
 
 # ========== ФУНКЦИЯ ДЛЯ ПЕРЕСЧЁТА КОНВЕРТОВ ==========
-def recalculate_money(user_id):
+def recalculate_money():
     """Пересчитывает деньги из всех продаж заново"""
-    sales = user_data[user_id].get("sales", [])
+    if "shared" not in user_data:
+        return
+    sales = user_data["shared"].get("sales", [])
     money = {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0}
     for sale in sales:
         price = sale.get("price", 0)
@@ -59,15 +76,7 @@ def recalculate_money(user_id):
         money["post"] += int(price * 0.15)
         money["pillow"] += int(price * 0.1)
         money["dream"] += int(price * 0.05)
-    user_data[user_id]["money"] = money
-
-# ========== ФУНКЦИЯ ДЛЯ ПОИСКА ДАННЫХ ДРУГОГО ПОЛЬЗОВАТЕЛЯ ==========
-def find_other_user_data(current_user_id):
-    """Ищет данные другого пользователя (для восстановления)"""
-    for user_id, data in user_data.items():
-        if user_id != current_user_id and data.get("items"):
-            return user_id, data
-    return None, None
+    user_data["shared"]["money"] = money
 
 # ========== БИБЛИОТЕКА ПРОМТОВ ==========
 PROMPTS = {
@@ -181,55 +190,35 @@ async def check_reminders():
         current_time = now.strftime("%H:%M")
         if current_time == "09:00" and last_morning != now.strftime("%d.%m.%Y"):
             last_morning = now.strftime("%d.%m.%Y")
-            for user_id in user_data.keys():
+            for user_id in ALLOWED_USERS:
                 try:
                     await bot.send_message(user_id, random.choice(MORNING_MESSAGES), parse_mode="HTML")
                 except:
                     pass
         if current_time == "19:00" and last_evening != now.strftime("%d.%m.%Y"):
             last_evening = now.strftime("%d.%m.%Y")
-            for user_id in user_data.keys():
+            for user_id in ALLOWED_USERS:
                 try:
-                    sales_today = len([s for s in user_data[user_id].get("sales", []) if s.get("date") == datetime.now().strftime("%d.%m.%Y")])
+                    if "shared" not in user_data:
+                        sales_today = 0
+                    else:
+                        sales_today = len([s for s in user_data["shared"].get("sales", []) if s.get("date") == datetime.now().strftime("%d.%m.%Y")])
                     msg = random.choice(EVENING_MESSAGES)
                     await bot.send_message(user_id, f"{msg}\n\n📊 Продано сегодня: {sales_today} вещей", parse_mode="HTML")
                 except:
                     pass
         await asyncio.sleep(30)
 
-# ========== СТАРТ С ВОССТАНОВЛЕНИЕМ ==========
+# ========== СТАРТ ==========
 @dp.message(Command("start"))
 async def start(message: Message, state: FSMContext):
     await state.clear()
     user_id = str(message.from_user.id)
     
-    # Если у пользователя уже есть данные — просто показываем меню
-    if user_id in user_data:
-        await message.answer(
-            "👋 Мама, я твой умный бизнес-секретарь!\n"
-            "Я помню каждую вещь, считаю деньги, напоминаю о планах и даю готовые промты для фото на манекене.\n\n"
-            "⬇️ Выбери действие:",
-            reply_markup=main_menu()
-        )
+    if user_id not in ALLOWED_USERS:
+        await message.answer("❌ У тебя нет доступа к этому боту.")
         return
     
-    # Если у пользователя нет данных, но есть данные других пользователей — предлагаем восстановить
-    other_id, other_data = find_other_user_data(user_id)
-    if other_id and other_data and other_data.get("items"):
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Восстановить мои вещи", callback_data=f"restore_{other_id}")],
-            [InlineKeyboardButton(text="🆕 Начать с нуля", callback_data="start_fresh")]
-        ])
-        await message.answer(
-            "👋 Привет! Я вижу, что ты уже добавляла вещи раньше, но сейчас я тебя не узнаю.\n\n"
-            f"📦 У меня есть твои вещи: {len(other_data.get('items', []))} шт.\n"
-            f"💰 Продаж: {len(other_data.get('sales', []))}\n\n"
-            "Ты хочешь восстановить свои старые вещи или начать с чистого листа?",
-            reply_markup=kb
-        )
-        return
-    
-    # Если данных ни у кого нет — создаём нового пользователя
     ensure_user(user_id)
     await message.answer(
         "👋 Мама, я твой умный бизнес-секретарь!\n"
@@ -238,71 +227,16 @@ async def start(message: Message, state: FSMContext):
         reply_markup=main_menu()
     )
 
-# ========== ВОССТАНОВЛЕНИЕ ДАННЫХ ==========
-@dp.callback_query(lambda c: c.data.startswith("restore_"))
-async def restore_data(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
-    new_user_id = str(callback.from_user.id)
-    old_user_id = callback.data.split("_")[1]
-    
-    # Проверяем, есть ли данные у старого пользователя
-    if old_user_id not in user_data:
-        await callback.message.delete()
-        await callback.message.answer("❌ Не удалось найти данные для восстановления.", reply_markup=main_menu())
-        await callback.answer()
-        return
-    
-    old_data = user_data[old_user_id]
-    
-    # Копируем данные из старого ID в новый
-    user_data[new_user_id] = {
-        "items": old_data.get("items", []),
-        "sales": old_data.get("sales", []),
-        "money": old_data.get("money", {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0}),
-        "item_counter": old_data.get("item_counter", 1)
-    }
-    
-    # Удаляем старые данные (чтобы не было дублей)
-    del user_data[old_user_id]
-    save_data(user_data)
-    
-    await callback.message.delete()
-    await callback.message.answer(
-        f"✅ <b>Данные восстановлены!</b>\n\n"
-        f"📦 Вещей: {len(user_data[new_user_id].get('items', []))} шт.\n"
-        f"💰 Продаж: {len(user_data[new_user_id].get('sales', []))}\n\n"
-        "Теперь ты можешь продолжить работу с того места, где остановилась!",
-        parse_mode="HTML",
-        reply_markup=main_menu()
-    )
-    await callback.answer()
-
-# ========== НАЧАТЬ С НУЛЯ ==========
-@dp.callback_query(lambda c: c.data == "start_fresh")
-async def start_fresh(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
-    user_id = str(callback.from_user.id)
-    
-    # Создаём нового пользователя с пустыми данными
-    ensure_user(user_id)
-    save_data(user_data)
-    
-    await callback.message.delete()
-    await callback.message.answer(
-        "🆕 <b>Начинаем с чистого листа!</b>\n\n"
-        "Все старые данные остались в файле, но теперь ты начинаешь с нуля.\n"
-        "Если захочешь восстановить старые вещи — просто удали переписку и напиши /start снова.\n\n"
-        "⬇️ Выбери действие:",
-        parse_mode="HTML",
-        reply_markup=main_menu()
-    )
-    await callback.answer()
-
 # ========== НАЗАД В ГЛАВНОЕ МЕНЮ ==========
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     await callback.message.delete()
     await callback.message.answer("👋 Главное меню:\n\n⬇️ Выбери действие:", reply_markup=main_menu())
@@ -313,9 +247,16 @@ async def back_to_menu(callback: CallbackQuery, state: FSMContext):
 async def show_strategy(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
-    sales = user_data.get(user_id, {}).get("sales", [])
-    sales_today = len([s for s in sales if s.get("date") == datetime.now().strftime("%d.%m.%Y")])
+    if "shared" not in user_data:
+        sales_today = 0
+    else:
+        sales_today = len([s for s in user_data["shared"].get("sales", []) if s.get("date") == datetime.now().strftime("%d.%m.%Y")])
     text = (f"📅 <b>План на сегодня</b>\n\n✅ Продано сегодня: {sales_today} / 3\n\n📋 <b>Чек-лист:</b>\n1️⃣ Сфотографируй 5 вещей\n2️⃣ Выложи их на Авито в 19:00\n3️⃣ Обнови 10 старых объявлений\n4️⃣ Ответь на все сообщения\n5️⃣ Добавь все продажи в бота\n\n🔥 <b>Совет:</b> Если вещь не продаётся 2 недели — отдай за 199 ₽")
     await callback.message.delete()
     await callback.message.answer(text, parse_mode="HTML", reply_markup=back_to_menu_button())
@@ -326,6 +267,11 @@ async def show_strategy(callback: CallbackQuery, state: FSMContext):
 async def prompt_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     await callback.message.delete()
     await callback.message.answer(
@@ -339,6 +285,11 @@ async def prompt_menu(callback: CallbackQuery, state: FSMContext):
 async def prompt_category_selected(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     category_map = {"prompt_dress": "dress", "prompt_coat": "coat", "prompt_pants": "pants", "prompt_sweater": "sweater", "prompt_shirt": "shirt", "prompt_short": "short", "prompt_default": "default"}
     category_key = category_map.get(callback.data, "default")
@@ -356,19 +307,27 @@ async def prompt_category_selected(callback: CallbackQuery, state: FSMContext):
 async def show_top_sales(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
-    sales = user_data.get(user_id, {}).get("sales", [])
-    if not sales:
+    if "shared" not in user_data:
         text = "🏆 Ты пока ничего не продала. Добавь первую продажу через кнопку «💰 Добавить продажу»"
     else:
-        items_count = {}
-        for sale in sales:
-            name = sale.get("name", "Без названия")
-            items_count[name] = items_count.get(name, 0) + 1
-        sorted_items = sorted(items_count.items(), key=lambda x: x[1], reverse=True)[:5]
-        text = "🏆 <b>Твои лучшие вещи (по частоте продаж):</b>\n\n"
-        for i, (name, count) in enumerate(sorted_items, 1):
-            text += f"{i}. {name} — {count} шт.\n"
+        sales = user_data["shared"].get("sales", [])
+        if not sales:
+            text = "🏆 Ты пока ничего не продала. Добавь первую продажу через кнопку «💰 Добавить продажу»"
+        else:
+            items_count = {}
+            for sale in sales:
+                name = sale.get("name", "Без названия")
+                items_count[name] = items_count.get(name, 0) + 1
+            sorted_items = sorted(items_count.items(), key=lambda x: x[1], reverse=True)[:5]
+            text = "🏆 <b>Твои лучшие вещи (по частоте продаж):</b>\n\n"
+            for i, (name, count) in enumerate(sorted_items, 1):
+                text += f"{i}. {name} — {count} шт.\n"
     await callback.message.delete()
     await callback.message.answer(text, parse_mode="HTML", reply_markup=back_to_menu_button())
     await callback.answer()
@@ -378,6 +337,11 @@ async def show_top_sales(callback: CallbackQuery, state: FSMContext):
 async def add_item_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     await callback.message.delete()
     await callback.message.answer(
@@ -391,6 +355,10 @@ async def add_item_menu(callback: CallbackQuery, state: FSMContext):
 @dp.message(ItemForm.photo, F.photo)
 async def item_photo(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await message.answer("❌ У тебя нет доступа.")
+        await state.clear()
+        return
     ensure_user(user_id)
     photo_id = message.photo[-1].file_id
     await state.update_data(photo=photo_id)
@@ -404,6 +372,10 @@ async def item_photo(message: Message, state: FSMContext):
 @dp.message(ItemForm.name)
 async def item_name(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await message.answer("❌ У тебя нет доступа.")
+        await state.clear()
+        return
     ensure_user(user_id)
     name = message.text.strip()
     if not name:
@@ -420,6 +392,10 @@ async def item_name(message: Message, state: FSMContext):
 @dp.message(ItemForm.size)
 async def item_size(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await message.answer("❌ У тебя нет доступа.")
+        await state.clear()
+        return
     ensure_user(user_id)
     await state.update_data(size=message.text.strip())
     await message.answer(
@@ -432,6 +408,10 @@ async def item_size(message: Message, state: FSMContext):
 @dp.message(ItemForm.color)
 async def item_color(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await message.answer("❌ У тебя нет доступа.")
+        await state.clear()
+        return
     ensure_user(user_id)
     await state.update_data(color=message.text.strip())
     await message.answer(
@@ -444,6 +424,10 @@ async def item_color(message: Message, state: FSMContext):
 @dp.message(ItemForm.category)
 async def item_category(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await message.answer("❌ У тебя нет доступа.")
+        await state.clear()
+        return
     ensure_user(user_id)
     await state.update_data(category=message.text.strip())
     await message.answer(
@@ -456,6 +440,10 @@ async def item_category(message: Message, state: FSMContext):
 @dp.message(ItemForm.tags)
 async def item_tags(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await message.answer("❌ У тебя нет доступа.")
+        await state.clear()
+        return
     ensure_user(user_id)
     tags = message.text.strip()
     if tags.lower() == "нет":
@@ -471,14 +459,18 @@ async def item_tags(message: Message, state: FSMContext):
 @dp.message(ItemForm.price)
 async def save_item(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await message.answer("❌ У тебя нет доступа.")
+        await state.clear()
+        return
     ensure_user(user_id)
     try:
         price = int(message.text.strip())
         data = await state.get_data()
         
-        item_id = user_data[user_id]["item_counter"]
-        user_data[user_id]["item_counter"] += 1
-        user_data[user_id]["items"].append({
+        item_id = user_data["shared"]["item_counter"]
+        user_data["shared"]["item_counter"] += 1
+        user_data["shared"]["items"].append({
             "id": item_id,
             "name": data.get("name"),
             "size": data.get("size"),
@@ -518,6 +510,11 @@ async def save_item(message: Message, state: FSMContext):
 async def back_to_name(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     await callback.message.delete()
     await callback.message.answer("📝 Напиши <b>название</b> вещи:", parse_mode="HTML", reply_markup=back_button("add_item_menu"))
@@ -528,6 +525,11 @@ async def back_to_name(callback: CallbackQuery, state: FSMContext):
 async def back_to_size(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     await callback.message.delete()
     await callback.message.answer("📏 Напиши <b>размер</b> (46, M, L):", parse_mode="HTML", reply_markup=back_button("item_back_to_name"))
@@ -538,6 +540,11 @@ async def back_to_size(callback: CallbackQuery, state: FSMContext):
 async def back_to_color(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     await callback.message.delete()
     await callback.message.answer("🎨 Напиши <b>цвет</b>:", parse_mode="HTML", reply_markup=back_button("item_back_to_size"))
@@ -548,6 +555,11 @@ async def back_to_color(callback: CallbackQuery, state: FSMContext):
 async def back_to_category(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     await callback.message.delete()
     await callback.message.answer("🏷️ Напиши <b>категорию</b> (любую, например: Платья, Кофты, Боди, Пиджак):", parse_mode="HTML", reply_markup=back_button("item_back_to_color"))
@@ -558,6 +570,11 @@ async def back_to_category(callback: CallbackQuery, state: FSMContext):
 async def back_to_tags(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     await callback.message.delete()
     await callback.message.answer("🏷️ Напиши <b>теги</b> (например: летнее, офис, праздник).\nМожно перечислить через запятую. Если не хочешь — напиши «нет».", parse_mode="HTML", reply_markup=back_button("item_back_to_category"))
@@ -568,6 +585,11 @@ async def back_to_tags(callback: CallbackQuery, state: FSMContext):
 async def back_to_price(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     await callback.message.delete()
     await callback.message.answer("💰 Напиши <b>цену</b> (число):", parse_mode="HTML", reply_markup=back_button("item_back_to_tags"))
@@ -579,9 +601,14 @@ async def back_to_price(callback: CallbackQuery, state: FSMContext):
 async def edit_item_menu_handler(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     item_id = int(callback.data.split("_")[2])
-    items = user_data.get(user_id, {}).get("items", [])
+    items = user_data["shared"].get("items", [])
     item = next((i for i in items if i.get("id") == item_id), None)
     
     if not item:
@@ -612,6 +639,11 @@ async def edit_item_menu_handler(callback: CallbackQuery, state: FSMContext):
 async def edit_name_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     item_id = int(callback.data.split("_")[2])
     await state.update_data(item_id=item_id, field="name")
@@ -624,6 +656,11 @@ async def edit_name_start(callback: CallbackQuery, state: FSMContext):
 async def edit_size_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     item_id = int(callback.data.split("_")[2])
     await state.update_data(item_id=item_id, field="size")
@@ -636,6 +673,11 @@ async def edit_size_start(callback: CallbackQuery, state: FSMContext):
 async def edit_color_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     item_id = int(callback.data.split("_")[2])
     await state.update_data(item_id=item_id, field="color")
@@ -648,6 +690,11 @@ async def edit_color_start(callback: CallbackQuery, state: FSMContext):
 async def edit_category_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     item_id = int(callback.data.split("_")[2])
     await state.update_data(item_id=item_id, field="category")
@@ -660,6 +707,11 @@ async def edit_category_start(callback: CallbackQuery, state: FSMContext):
 async def edit_tags_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     item_id = int(callback.data.split("_")[2])
     await state.update_data(item_id=item_id, field="tags")
@@ -672,6 +724,11 @@ async def edit_tags_start(callback: CallbackQuery, state: FSMContext):
 async def edit_price_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     item_id = int(callback.data.split("_")[2])
     await state.update_data(item_id=item_id, field="price")
@@ -683,13 +740,17 @@ async def edit_price_start(callback: CallbackQuery, state: FSMContext):
 @dp.message(EditForm.value)
 async def save_edit_value(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await message.answer("❌ У тебя нет доступа.")
+        await state.clear()
+        return
     ensure_user(user_id)
     data = await state.get_data()
     item_id = data.get("item_id")
     field = data.get("field")
     new_value = message.text.strip()
     
-    items = user_data.get(user_id, {}).get("items", [])
+    items = user_data["shared"].get("items", [])
     item = next((i for i in items if i.get("id") == item_id), None)
     
     if not item:
@@ -728,6 +789,11 @@ async def save_edit_value(message: Message, state: FSMContext):
 async def back_to_items(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     await callback.message.delete()
     await show_items(callback, state)
@@ -737,10 +803,15 @@ async def back_to_items(callback: CallbackQuery, state: FSMContext):
 async def delete_item_confirm(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     item_id = int(callback.data.split("_")[2])
     
-    items = user_data.get(user_id, {}).get("items", [])
+    items = user_data["shared"].get("items", [])
     item = next((i for i in items if i.get("id") == item_id), None)
     
     if not item:
@@ -765,10 +836,15 @@ async def delete_item_confirm(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(lambda c: c.data.startswith("confirm_delete_"))
 async def confirm_delete_item(callback: CallbackQuery, state: FSMContext):
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     item_id = int(callback.data.split("_")[2])
     
-    items = user_data.get(user_id, {}).get("items", [])
+    items = user_data["shared"].get("items", [])
     item = next((i for i in items if i.get("id") == item_id), None)
     
     if not item:
@@ -778,14 +854,14 @@ async def confirm_delete_item(callback: CallbackQuery, state: FSMContext):
         return
     
     # Удаляем вещь
-    user_data[user_id]["items"] = [i for i in items if i.get("id") != item_id]
+    user_data["shared"]["items"] = [i for i in items if i.get("id") != item_id]
     
     # Удаляем все продажи, связанные с этой вещью
-    sales = user_data[user_id].get("sales", [])
-    user_data[user_id]["sales"] = [s for s in sales if s.get("item_id") != item_id]
+    sales = user_data["shared"].get("sales", [])
+    user_data["shared"]["sales"] = [s for s in sales if s.get("item_id") != item_id]
     
     # Пересчитываем деньги из оставшихся продаж
-    recalculate_money(user_id)
+    recalculate_money()
     save_data(user_data)
     
     await callback.message.delete()
@@ -803,6 +879,11 @@ async def confirm_delete_item(callback: CallbackQuery, state: FSMContext):
 async def cancel_delete_item(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     await callback.message.delete()
     await callback.message.answer("❌ Удаление отменено.", reply_markup=main_menu())
@@ -813,8 +894,16 @@ async def cancel_delete_item(callback: CallbackQuery, state: FSMContext):
 async def show_items(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
-    items = user_data.get(user_id, {}).get("items", [])
+    if "shared" not in user_data:
+        items = []
+    else:
+        items = user_data["shared"].get("items", [])
     
     if not items:
         await callback.message.delete()
@@ -849,8 +938,16 @@ async def show_items(callback: CallbackQuery, state: FSMContext):
 async def show_items_list(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
-    items = user_data.get(user_id, {}).get("items", [])
+    if "shared" not in user_data:
+        items = []
+    else:
+        items = user_data["shared"].get("items", [])
     if not items:
         text = "📋 Пока нет ни одной вещи."
     else:
@@ -871,6 +968,11 @@ async def show_items_list(callback: CallbackQuery, state: FSMContext):
 async def search_item_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     await callback.message.delete()
     await callback.message.answer("🔍 Напиши, что ищем:\n(Название, размер, цвет, категорию или тег)", reply_markup=back_to_menu_button())
@@ -880,9 +982,16 @@ async def search_item_start(callback: CallbackQuery, state: FSMContext):
 @dp.message(SearchForm.query)
 async def search_item_result(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await message.answer("❌ У тебя нет доступа.")
+        await state.clear()
+        return
     ensure_user(user_id)
     query = message.text.lower()
-    items = user_data.get(user_id, {}).get("items", [])
+    if "shared" not in user_data:
+        items = []
+    else:
+        items = user_data["shared"].get("items", [])
     found = []
     for item in items:
         if (query in item.get("name", "").lower() or query in item.get("size", "").lower() or query in item.get("color", "").lower() or query in item.get("category", "").lower() or query in item.get("tags", "").lower()):
@@ -905,6 +1014,11 @@ async def search_item_result(message: Message, state: FSMContext):
 async def start_sale(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     await callback.message.delete()
     await callback.message.answer("💰 Напиши <b>ID вещи</b>, которую продала.\nПосмотреть ID можно в разделе «Мои вещи».", parse_mode="HTML", reply_markup=back_to_menu_button())
@@ -914,10 +1028,17 @@ async def start_sale(callback: CallbackQuery, state: FSMContext):
 @dp.message(SaleForm.item_id)
 async def get_sale_price(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await message.answer("❌ У тебя нет доступа.")
+        await state.clear()
+        return
     ensure_user(user_id)
     try:
         item_id = int(message.text.strip())
-        items = user_data.get(user_id, {}).get("items", [])
+        if "shared" not in user_data:
+            items = []
+        else:
+            items = user_data["shared"].get("items", [])
         item = next((i for i in items if i.get("id") == item_id), None)
         if not item:
             await message.answer("❌ Вещь с таким ID не найдена. Попробуй ещё раз.", reply_markup=back_to_menu_button())
@@ -935,6 +1056,10 @@ async def get_sale_price(message: Message, state: FSMContext):
 @dp.message(SaleForm.price)
 async def save_sale(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await message.answer("❌ У тебя нет доступа.")
+        await state.clear()
+        return
     ensure_user(user_id)
     try:
         price = int(message.text.strip())
@@ -942,17 +1067,17 @@ async def save_sale(message: Message, state: FSMContext):
         item_id = data.get("item_id")
         item_name = data.get("item_name", "Без названия")
         
-        user_data[user_id]["sales"].append({
+        user_data["shared"]["sales"].append({
             "item_id": item_id,
             "name": item_name,
             "price": price,
             "date": datetime.now().strftime("%d.%m.%Y")
         })
-        for item in user_data[user_id]["items"]:
+        for item in user_data["shared"]["items"]:
             if item.get("id") == item_id:
                 item["status"] = "sold"
                 break
-        recalculate_money(user_id)
+        recalculate_money()
         save_data(user_data)
         
         await message.answer(
@@ -964,16 +1089,26 @@ async def save_sale(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Ошибка! Введи число", reply_markup=back_to_menu_button())
 
-# ========== СТАТИСТИКА (ВСЕ КАТЕГОРИИ) ==========
+# ========== СТАТИСТИКА ==========
 @dp.callback_query(lambda c: c.data == "stats")
 async def show_stats(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
-    data = user_data.get(user_id, {})
-    sales = data.get("sales", [])
-    items = data.get("items", [])
-    money = data.get("money", {})
+    if "shared" not in user_data:
+        sales = []
+        items = []
+        money = {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0}
+    else:
+        sales = user_data["shared"].get("sales", [])
+        items = user_data["shared"].get("items", [])
+        money = user_data["shared"].get("money", {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0})
+    
     total_sales = len(sales)
     total_revenue = sum(s.get("price", 0) for s in sales)
     avg_price = int(total_revenue / total_sales) if total_sales > 0 else 0
@@ -1016,8 +1151,19 @@ async def show_stats(callback: CallbackQuery, state: FSMContext):
 async def undo_last_sale(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
-    sales = user_data.get(user_id, {}).get("sales", [])
+    if "shared" not in user_data:
+        await callback.message.delete()
+        await callback.message.answer("❌ Нет продаж, которые можно отменить.", reply_markup=back_to_menu_button())
+        await callback.answer()
+        return
+    
+    sales = user_data["shared"].get("sales", [])
     
     if not sales:
         await callback.message.delete()
@@ -1031,15 +1177,15 @@ async def undo_last_sale(callback: CallbackQuery, state: FSMContext):
     price = last_sale.get("price", 0)
     
     # Удаляем последнюю продажу
-    user_data[user_id]["sales"] = sales[:-1]
+    user_data["shared"]["sales"] = sales[:-1]
     
     # Возвращаем вещь в активные (если она ещё есть в списке)
-    for item in user_data[user_id]["items"]:
+    for item in user_data["shared"]["items"]:
         if item.get("id") == item_id:
             item["status"] = "active"
             break
     
-    recalculate_money(user_id)
+    recalculate_money()
     save_data(user_data)
     
     await callback.message.delete()
@@ -1060,6 +1206,11 @@ async def undo_last_sale(callback: CallbackQuery, state: FSMContext):
 async def show_scripts(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
     ensure_user(user_id)
     text = ("🗣 <b>Готовые фразы для общения с покупателями</b>\n\n1️⃣ <b>Если просят скидку:</b>\n«Честно, я уже поставила минимум. Но если оформите сегодня — положу в подарок шарфик!»\n\n2️⃣ <b>Если говорят «Подумаю»:</b>\n«Понимаю! Такие вещи быстро уходят. Отложу до вечера, потом уйдёт другому.»\n\n3️⃣ <b>Чтобы привести подругу:</b>\n«Забирайте, и если приведете соседку — скидка 30% на следующую вещь!»\n\n4️⃣ <b>Закрытие сделки:</b>\n«Посылка у вас! Если всё понравилось — оставьте отзыв. Заходите ещё!»")
     await callback.message.delete()
@@ -1068,7 +1219,7 @@ async def show_scripts(callback: CallbackQuery, state: FSMContext):
 
 # ========== ЗАПУСК ==========
 async def main():
-    print("✅ Бот с восстановлением данных запущен!")
+    print("✅ Бот с общей базой для нескольких пользователей запущен!")
     asyncio.create_task(check_reminders())
     await dp.start_polling(bot)
 
