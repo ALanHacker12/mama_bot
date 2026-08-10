@@ -34,6 +34,20 @@ def save_data(data):
 
 user_data = load_data()
 
+# ========== ФУНКЦИЯ ДЛЯ ПРОВЕРКИ/СОЗДАНИЯ ПОЛЬЗОВАТЕЛЯ ==========
+def ensure_user(user_id):
+    """Проверяет, есть ли пользователь в базе. Если нет — создаёт."""
+    if user_id not in user_data:
+        user_data[user_id] = {
+            "items": [],
+            "sales": [],
+            "money": {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0},
+            "item_counter": 1
+        }
+        save_data(user_data)
+        return True
+    return False
+
 # ========== БИБЛИОТЕКА ПРОМТОВ ==========
 PROMPTS = {
     "dress": {"name": "👗 Платье", "text": """Professional fashion photography. A beautiful women's dress perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details."""},
@@ -67,7 +81,6 @@ def back_to_menu_button():
     return kb
 
 def back_button(callback_data):
-    """Универсальная кнопка назад (возвращает на предыдущий шаг)"""
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 На шаг назад", callback_data=callback_data)]
     ])
@@ -136,17 +149,25 @@ async def check_reminders():
 async def start(message: Message, state: FSMContext):
     await state.clear()
     user_id = str(message.from_user.id)
-    if user_id not in user_data:
-        user_data[user_id] = {"items": [], "sales": [], "money": {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0}, "item_counter": 1}
-        save_data(user_data)
-    await message.answer("👋 Мама, я твой умный бизнес-секретарь!\nЯ помню каждую вещь, считаю деньги, напоминаю о планах и даю готовые промты для фото на манекене.\n\n⬇️ Выбери действие:", reply_markup=main_menu())
+    ensure_user(user_id)
+    await message.answer(
+        "👋 Мама, я твой умный бизнес-секретарь!\n"
+        "Я помню каждую вещь, считаю деньги, напоминаю о планах и даю готовые промты для фото на манекене.\n\n"
+        "⬇️ Выбери действие:",
+        reply_markup=main_menu()
+    )
 
 # ========== НАЗАД В ГЛАВНОЕ МЕНЮ ==========
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     await callback.message.delete()
-    await callback.message.answer("👋 Главное меню:\n\n⬇️ Выбери действие:", reply_markup=main_menu())
+    await callback.message.answer(
+        "👋 Главное меню:\n\n⬇️ Выбери действие:",
+        reply_markup=main_menu()
+    )
     await callback.answer()
 
 # ========== СТРАТЕГИЯ ==========
@@ -154,6 +175,7 @@ async def back_to_menu(callback: CallbackQuery, state: FSMContext):
 async def show_strategy(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     sales = user_data.get(user_id, {}).get("sales", [])
     sales_today = len([s for s in sales if s.get("date") == datetime.now().strftime("%d.%m.%Y")])
     text = (f"📅 <b>План на сегодня</b>\n\n✅ Продано сегодня: {sales_today} / 3\n\n📋 <b>Чек-лист:</b>\n1️⃣ Сфотографируй 5 вещей\n2️⃣ Выложи их на Авито в 19:00\n3️⃣ Обнови 10 старых объявлений\n4️⃣ Ответь на все сообщения\n5️⃣ Добавь все продажи в бота\n\n🔥 <b>Совет:</b> Если вещь не продаётся 2 недели — отдай за 199 ₽")
@@ -165,17 +187,30 @@ async def show_strategy(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(lambda c: c.data == "prompt_menu")
 async def prompt_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     await callback.message.delete()
-    await callback.message.answer("🎨 <b>Выбери категорию вещи</b>\n\nЯ выдам готовый промт для генерации фото на манекене.\nПросто скопируй его и вставь в Nano Banana / любую нейросеть.\n\n⬇️ Выбери категорию:", parse_mode="HTML", reply_markup=prompt_category_menu())
+    await callback.message.answer(
+        "🎨 <b>Выбери категорию вещи</b>\n\nЯ выдам готовый промт для генерации фото на манекене.\nПросто скопируй его и вставь в Nano Banana / любую нейросеть.\n\n⬇️ Выбери категорию:",
+        parse_mode="HTML",
+        reply_markup=prompt_category_menu()
+    )
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("prompt_"))
 async def prompt_category_selected(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     category_map = {"prompt_dress": "dress", "prompt_coat": "coat", "prompt_pants": "pants", "prompt_sweater": "sweater", "prompt_shirt": "shirt", "prompt_short": "short", "prompt_default": "default"}
     category_key = category_map.get(callback.data, "default")
     prompt_data = PROMPTS.get(category_key, PROMPTS["default"])
     await callback.message.delete()
-    await callback.message.answer(f"🎨 <b>Промт для {prompt_data['name']}</b>\n\n<b>⬇️ Скопируй этот текст:</b>\n<code>{prompt_data['text']}</code>\n\n📌 <b>Инструкция:</b>\n1️⃣ Скопируй текст выше\n2️⃣ Вставь в нейросеть (Nano Banana, Midjourney, Kandinsky)\n3️⃣ Загрузи своё фото вещи\n4️⃣ Нажми «Сгенерировать»\n\n✨ Получишь профессиональное фото на манекене!", parse_mode="HTML", reply_markup=back_to_menu_button())
+    await callback.message.answer(
+        f"🎨 <b>Промт для {prompt_data['name']}</b>\n\n<b>⬇️ Скопируй этот текст:</b>\n<code>{prompt_data['text']}</code>\n\n📌 <b>Инструкция:</b>\n1️⃣ Скопируй текст выше\n2️⃣ Вставь в нейросеть (Nano Banana, Midjourney, Kandinsky)\n3️⃣ Загрузи своё фото вещи\n4️⃣ Нажми «Сгенерировать»\n\n✨ Получишь профессиональное фото на манекене!",
+        parse_mode="HTML",
+        reply_markup=back_to_menu_button()
+    )
     await callback.answer()
 
 # ========== ТОП ПРОДАЖ ==========
@@ -183,6 +218,7 @@ async def prompt_category_selected(callback: CallbackQuery, state: FSMContext):
 async def show_top_sales(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     sales = user_data.get(user_id, {}).get("sales", [])
     if not sales:
         text = "🏆 Ты пока ничего не продала. Добавь первую продажу через кнопку «💰 Добавить продажу»"
@@ -199,61 +235,105 @@ async def show_top_sales(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(text, parse_mode="HTML", reply_markup=back_to_menu_button())
     await callback.answer()
 
-# ========== ДОБАВЛЕНИЕ ВЕЩИ (С КНОПКАМИ НАЗАД НА КАЖДОМ ШАГЕ) ==========
+# ========== ДОБАВЛЕНИЕ ВЕЩИ ==========
 @dp.callback_query(lambda c: c.data == "add_item_menu")
 async def add_item_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     await callback.message.delete()
-    await callback.message.answer("📸 <b>Добавляем новую вещь</b>\n\nОтправь мне <b>фото</b> вещи (одно фото).", parse_mode="HTML", reply_markup=back_to_menu_button())
+    await callback.message.answer(
+        "📸 <b>Добавляем новую вещь</b>\n\nОтправь мне <b>фото</b> вещи (одно фото).",
+        parse_mode="HTML",
+        reply_markup=back_to_menu_button()
+    )
     await state.set_state(ItemForm.photo)
     await callback.answer()
 
 @dp.message(ItemForm.photo, F.photo)
 async def item_photo(message: Message, state: FSMContext):
+    user_id = str(message.from_user.id)
+    ensure_user(user_id)
     photo_id = message.photo[-1].file_id
     await state.update_data(photo=photo_id)
-    await message.answer("📝 Напиши <b>название</b> вещи (например: Платье летнее):", parse_mode="HTML", reply_markup=back_button("add_item_menu"))
+    await message.answer(
+        "📝 Напиши <b>название</b> вещи (например: Платье летнее):",
+        parse_mode="HTML",
+        reply_markup=back_button("add_item_menu")
+    )
     await state.set_state(ItemForm.name)
 
 @dp.message(ItemForm.name)
 async def item_name(message: Message, state: FSMContext):
+    user_id = str(message.from_user.id)
+    ensure_user(user_id)
     await state.update_data(name=message.text)
-    await message.answer("📏 Напиши <b>размер</b> (46, M, L):", parse_mode="HTML", reply_markup=back_button("item_back_to_name"))
+    await message.answer(
+        "📏 Напиши <b>размер</b> (46, M, L):",
+        parse_mode="HTML",
+        reply_markup=back_button("item_back_to_name")
+    )
     await state.set_state(ItemForm.size)
 
 @dp.message(ItemForm.size)
 async def item_size(message: Message, state: FSMContext):
+    user_id = str(message.from_user.id)
+    ensure_user(user_id)
     await state.update_data(size=message.text)
-    await message.answer("🎨 Напиши <b>цвет</b>:", parse_mode="HTML", reply_markup=back_button("item_back_to_size"))
+    await message.answer(
+        "🎨 Напиши <b>цвет</b>:",
+        parse_mode="HTML",
+        reply_markup=back_button("item_back_to_size")
+    )
     await state.set_state(ItemForm.color)
 
 @dp.message(ItemForm.color)
 async def item_color(message: Message, state: FSMContext):
+    user_id = str(message.from_user.id)
+    ensure_user(user_id)
     await state.update_data(color=message.text)
-    await message.answer("🏷️ Напиши <b>категорию</b> (Платья, Кофты, Джинсы, Шорты, Куртки):", parse_mode="HTML", reply_markup=back_button("item_back_to_color"))
+    await message.answer(
+        "🏷️ Напиши <b>категорию</b> (Платья, Кофты, Джинсы, Шорты, Куртки):",
+        parse_mode="HTML",
+        reply_markup=back_button("item_back_to_color")
+    )
     await state.set_state(ItemForm.category)
 
 @dp.message(ItemForm.category)
 async def item_category(message: Message, state: FSMContext):
+    user_id = str(message.from_user.id)
+    ensure_user(user_id)
     await state.update_data(category=message.text)
-    await message.answer("🏷️ Напиши <b>теги</b> (например: летнее, офис, праздник).\nМожно перечислить через запятую. Если не хочешь — напиши «нет».", parse_mode="HTML", reply_markup=back_button("item_back_to_category"))
+    await message.answer(
+        "🏷️ Напиши <b>теги</b> (например: летнее, офис, праздник).\nМожно перечислить через запятую. Если не хочешь — напиши «нет».",
+        parse_mode="HTML",
+        reply_markup=back_button("item_back_to_category")
+    )
     await state.set_state(ItemForm.tags)
 
 @dp.message(ItemForm.tags)
 async def item_tags(message: Message, state: FSMContext):
+    user_id = str(message.from_user.id)
+    ensure_user(user_id)
     tags = message.text.strip()
     if tags.lower() == "нет":
         tags = ""
     await state.update_data(tags=tags)
-    await message.answer("💰 Напиши <b>цену</b> (число):", parse_mode="HTML", reply_markup=back_button("item_back_to_tags"))
+    await message.answer(
+        "💰 Напиши <b>цену</b> (число):",
+        parse_mode="HTML",
+        reply_markup=back_button("item_back_to_tags")
+    )
     await state.set_state(ItemForm.price)
 
 @dp.message(ItemForm.price)
 async def save_item(message: Message, state: FSMContext):
+    user_id = str(message.from_user.id)
+    ensure_user(user_id)  # <--- САМОЕ ВАЖНОЕ ИСПРАВЛЕНИЕ!
     try:
         price = int(message.text)
         data = await state.get_data()
-        user_id = str(message.from_user.id)
+        
         item_id = user_data[user_id]["item_counter"]
         user_data[user_id]["item_counter"] += 1
         user_data[user_id]["items"].append({
@@ -269,51 +349,110 @@ async def save_item(message: Message, state: FSMContext):
             "created": datetime.now().strftime("%d.%m.%Y")
         })
         save_data(user_data)
-        await message.answer_photo(data.get("photo"), caption=(f"✅ <b>Вещь добавлена!</b>\n\n🆔 <b>ID:</b> {item_id}\n📦 {data.get('name')}\n📏 Размер: {data.get('size')}\n🎨 Цвет: {data.get('color')}\n🏷️ Категория: {data.get('category')}\n🏷️ Теги: {data.get('tags') or 'нет'}\n💰 Цена: {price} ₽"), parse_mode="HTML", reply_markup=main_menu())
+        await message.answer_photo(
+            data.get("photo"),
+            caption=(
+                f"✅ <b>Вещь добавлена!</b>\n\n"
+                f"🆔 <b>ID:</b> {item_id}\n"
+                f"📦 {data.get('name')}\n"
+                f"📏 Размер: {data.get('size')}\n"
+                f"🎨 Цвет: {data.get('color')}\n"
+                f"🏷️ Категория: {data.get('category')}\n"
+                f"🏷️ Теги: {data.get('tags') or 'нет'}\n"
+                f"💰 Цена: {price} ₽"
+            ),
+            parse_mode="HTML",
+            reply_markup=main_menu()
+        )
         await state.clear()
     except ValueError:
-        await message.answer("❌ Ошибка! Введи число, например: 1200", reply_markup=back_button("item_back_to_price"))
+        await message.answer(
+            "❌ Ошибка! Введи число, например: 1200",
+            reply_markup=back_button("item_back_to_price")
+        )
 
 # ========== ОБРАБОТЧИКИ ВОЗВРАТА НА ШАГ ==========
 @dp.callback_query(lambda c: c.data == "item_back_to_name")
 async def back_to_name(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     await callback.message.delete()
-    await callback.message.answer("📝 Напиши <b>название</b> вещи:", parse_mode="HTML", reply_markup=back_button("add_item_menu"))
+    await callback.message.answer(
+        "📝 Напиши <b>название</b> вещи:",
+        parse_mode="HTML",
+        reply_markup=back_button("add_item_menu")
+    )
     await state.set_state(ItemForm.name)
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "item_back_to_size")
 async def back_to_size(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     await callback.message.delete()
-    await callback.message.answer("📏 Напиши <b>размер</b> (46, M, L):", parse_mode="HTML", reply_markup=back_button("item_back_to_name"))
+    await callback.message.answer(
+        "📏 Напиши <b>размер</b> (46, M, L):",
+        parse_mode="HTML",
+        reply_markup=back_button("item_back_to_name")
+    )
     await state.set_state(ItemForm.size)
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "item_back_to_color")
 async def back_to_color(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     await callback.message.delete()
-    await callback.message.answer("🎨 Напиши <b>цвет</b>:", parse_mode="HTML", reply_markup=back_button("item_back_to_size"))
+    await callback.message.answer(
+        "🎨 Напиши <b>цвет</b>:",
+        parse_mode="HTML",
+        reply_markup=back_button("item_back_to_size")
+    )
     await state.set_state(ItemForm.color)
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "item_back_to_category")
 async def back_to_category(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     await callback.message.delete()
-    await callback.message.answer("🏷️ Напиши <b>категорию</b> (Платья, Кофты, Джинсы, Шорты, Куртки):", parse_mode="HTML", reply_markup=back_button("item_back_to_color"))
+    await callback.message.answer(
+        "🏷️ Напиши <b>категорию</b> (Платья, Кофты, Джинсы, Шорты, Куртки):",
+        parse_mode="HTML",
+        reply_markup=back_button("item_back_to_color")
+    )
     await state.set_state(ItemForm.category)
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "item_back_to_tags")
 async def back_to_tags(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     await callback.message.delete()
-    await callback.message.answer("🏷️ Напиши <b>теги</b> (например: летнее, офис, праздник).\nМожно перечислить через запятую. Если не хочешь — напиши «нет».", parse_mode="HTML", reply_markup=back_button("item_back_to_category"))
+    await callback.message.answer(
+        "🏷️ Напиши <b>теги</b> (например: летнее, офис, праздник).\nМожно перечислить через запятую. Если не хочешь — напиши «нет».",
+        parse_mode="HTML",
+        reply_markup=back_button("item_back_to_category")
+    )
     await state.set_state(ItemForm.tags)
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "item_back_to_price")
 async def back_to_price(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     await callback.message.delete()
-    await callback.message.answer("💰 Напиши <b>цену</b> (число):", parse_mode="HTML", reply_markup=back_button("item_back_to_tags"))
+    await callback.message.answer(
+        "💰 Напиши <b>цену</b> (число):",
+        parse_mode="HTML",
+        reply_markup=back_button("item_back_to_tags")
+    )
     await state.set_state(ItemForm.price)
     await callback.answer()
 
@@ -322,10 +461,14 @@ async def back_to_price(callback: CallbackQuery, state: FSMContext):
 async def show_items(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     items = user_data.get(user_id, {}).get("items", [])
     if not items:
         await callback.message.delete()
-        await callback.message.answer("📸 У тебя пока нет вещей в базе.\n\nДобавь первую вещь через кнопку «➕ Добавить вещь»", reply_markup=back_to_menu_button())
+        await callback.message.answer(
+            "📸 У тебя пока нет вещей в базе.\n\nДобавь первую вещь через кнопку «➕ Добавить вещь»",
+            reply_markup=back_to_menu_button()
+        )
         await callback.answer()
         return
     for item in items[-5:]:
@@ -339,13 +482,18 @@ async def show_items(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_menu")]
     ])
     await callback.message.delete()
-    await callback.message.answer(f"📸 <b>Последние добавленные вещи</b>\nВсего вещей: {total}\n\nЧто хочешь сделать дальше?", reply_markup=kb, parse_mode="HTML")
+    await callback.message.answer(
+        f"📸 <b>Последние добавленные вещи</b>\nВсего вещей: {total}\n\nЧто хочешь сделать дальше?",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "items_list")
 async def show_items_list(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     items = user_data.get(user_id, {}).get("items", [])
     if not items:
         text = "📋 Пока нет ни одной вещи."
@@ -366,15 +514,21 @@ async def show_items_list(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(lambda c: c.data == "search_item")
 async def search_item_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     await callback.message.delete()
-    await callback.message.answer("🔍 Напиши, что ищем:\n(Название, размер, цвет, категорию или тег)", reply_markup=back_to_menu_button())
+    await callback.message.answer(
+        "🔍 Напиши, что ищем:\n(Название, размер, цвет, категорию или тег)",
+        reply_markup=back_to_menu_button()
+    )
     await state.set_state(SearchForm.query)
     await callback.answer()
 
 @dp.message(SearchForm.query)
 async def search_item_result(message: Message, state: FSMContext):
-    query = message.text.lower()
     user_id = str(message.from_user.id)
+    ensure_user(user_id)
+    query = message.text.lower()
     items = user_data.get(user_id, {}).get("items", [])
     found = []
     for item in items:
@@ -397,36 +551,60 @@ async def search_item_result(message: Message, state: FSMContext):
 @dp.callback_query(lambda c: c.data == "sale")
 async def start_sale(callback: CallbackQuery, state: FSMContext):
     await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     await callback.message.delete()
-    await callback.message.answer("💰 Напиши <b>ID вещи</b>, которую продала.\nПосмотреть ID можно в разделе «Мои вещи».", parse_mode="HTML", reply_markup=back_to_menu_button())
+    await callback.message.answer(
+        "💰 Напиши <b>ID вещи</b>, которую продала.\nПосмотреть ID можно в разделе «Мои вещи».",
+        parse_mode="HTML",
+        reply_markup=back_to_menu_button()
+    )
     await state.set_state(SaleForm.item_id)
     await callback.answer()
 
 @dp.message(SaleForm.item_id)
 async def get_sale_price(message: Message, state: FSMContext):
+    user_id = str(message.from_user.id)
+    ensure_user(user_id)
     try:
         item_id = int(message.text)
-        user_id = str(message.from_user.id)
         items = user_data.get(user_id, {}).get("items", [])
         item = next((i for i in items if i.get("id") == item_id), None)
         if not item:
-            await message.answer("❌ Вещь с таким ID не найдена. Попробуй ещё раз.", reply_markup=back_to_menu_button())
+            await message.answer(
+                "❌ Вещь с таким ID не найдена. Попробуй ещё раз.",
+                reply_markup=back_to_menu_button()
+            )
             return
         await state.update_data(item_id=item_id, item_name=item.get("name"), default_price=item.get("price"))
-        await message.answer(f"📦 {item.get('name')}\n💰 Рекомендуемая цена: {item.get('price')} ₽\n\nНапиши <b>цену продажи</b> (число):", parse_mode="HTML", reply_markup=back_button("sale"))
+        await message.answer(
+            f"📦 {item.get('name')}\n💰 Рекомендуемая цена: {item.get('price')} ₽\n\nНапиши <b>цену продажи</b> (число):",
+            parse_mode="HTML",
+            reply_markup=back_button("sale")
+        )
         await state.set_state(SaleForm.price)
     except ValueError:
-        await message.answer("❌ Введи число (ID вещи)", reply_markup=back_to_menu_button())
+        await message.answer(
+            "❌ Введи число (ID вещи)",
+            reply_markup=back_to_menu_button()
+        )
 
 @dp.message(SaleForm.price)
 async def save_sale(message: Message, state: FSMContext):
+    user_id = str(message.from_user.id)
+    ensure_user(user_id)
     try:
         price = int(message.text)
         data = await state.get_data()
         item_id = data.get("item_id")
         item_name = data.get("item_name", "Без названия")
-        user_id = str(message.from_user.id)
-        user_data[user_id]["sales"].append({"item_id": item_id, "name": item_name, "price": price, "date": datetime.now().strftime("%d.%m.%Y")})
+        
+        user_data[user_id]["sales"].append({
+            "item_id": item_id,
+            "name": item_name,
+            "price": price,
+            "date": datetime.now().strftime("%d.%m.%Y")
+        })
         for item in user_data[user_id]["items"]:
             if item.get("id") == item_id:
                 item["status"] = "sold"
@@ -438,16 +616,24 @@ async def save_sale(message: Message, state: FSMContext):
         money["pillow"] += int(price * 0.1)
         money["dream"] += int(price * 0.05)
         save_data(user_data)
-        await message.answer(f"✅ Продажа записана!\n\n🆔 Вещь #{item_id}\n📦 {item_name} — {price} ₽\n\n<b>Деньги разложены:</b>\n👩 Себе (30%): {int(price*0.3)} ₽\n📦 Оборот (40%): {int(price*0.4)} ₽\n📮 Почта (15%): {int(price*0.15)} ₽\n🛡️ Подушка (10%): {int(price*0.1)} ₽\n✨ Мечта (5%): {int(price*0.05)} ₽", parse_mode="HTML", reply_markup=main_menu())
+        await message.answer(
+            f"✅ Продажа записана!\n\n🆔 Вещь #{item_id}\n📦 {item_name} — {price} ₽\n\n<b>Деньги разложены:</b>\n👩 Себе (30%): {int(price*0.3)} ₽\n📦 Оборот (40%): {int(price*0.4)} ₽\n📮 Почта (15%): {int(price*0.15)} ₽\n🛡️ Подушка (10%): {int(price*0.1)} ₽\n✨ Мечта (5%): {int(price*0.05)} ₽",
+            parse_mode="HTML",
+            reply_markup=main_menu()
+        )
         await state.clear()
     except ValueError:
-        await message.answer("❌ Ошибка! Введи число", reply_markup=back_to_menu_button())
+        await message.answer(
+            "❌ Ошибка! Введи число",
+            reply_markup=back_to_menu_button()
+        )
 
 # ========== СТАТИСТИКА ==========
 @dp.callback_query(lambda c: c.data == "stats")
 async def show_stats(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     data = user_data.get(user_id, {})
     sales = data.get("sales", [])
     items = data.get("items", [])
@@ -471,6 +657,8 @@ async def show_stats(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(lambda c: c.data == "scripts")
 async def show_scripts(callback: CallbackQuery, state: FSMContext):
     await state.clear()
+    user_id = str(callback.from_user.id)
+    ensure_user(user_id)
     text = ("🗣 <b>Готовые фразы для общения с покупателями</b>\n\n1️⃣ <b>Если просят скидку:</b>\n«Честно, я уже поставила минимум. Но если оформите сегодня — положу в подарок шарфик!»\n\n2️⃣ <b>Если говорят «Подумаю»:</b>\n«Понимаю! Такие вещи быстро уходят. Отложу до вечера, потом уйдёт другому.»\n\n3️⃣ <b>Чтобы привести подругу:</b>\n«Забирайте, и если приведете соседку — скидка 30% на следующую вещь!»\n\n4️⃣ <b>Закрытие сделки:</b>\n«Посылка у вас! Если всё понравилось — оставьте отзыв. Заходите ещё!»")
     await callback.message.delete()
     await callback.message.answer(text, parse_mode="HTML", reply_markup=back_to_menu_button())
