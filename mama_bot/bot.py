@@ -12,45 +12,66 @@ from aiogram.fsm.state import State, StatesGroup
 
 # ========== ТОКЕН ==========
 BOT_TOKEN = "8740387123:AAHET8K33FpV0XRAAu2rIubP3zM4qTA01Yk"
-DATA_FILE = "user_data.json"
+DATA_FILE = "/app/data/user_data.json"  # <--- ПРАВИЛЬНЫЙ ПУТЬ
+
+# Создаём папку для данных, если её нет
+os.makedirs("/app/data", exist_ok=True)
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ========== ХРАНИЛИЩЕ ==========
+# ========== ХРАНИЛИЩЕ (ОДНА БАЗА ДЛЯ ВСЕХ) ==========
 def load_data():
+    """Загружает общую базу данных из файла"""
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except:
-            return {}
-    return {}
+            pass
+    # Если файла нет — создаём пустую базу
+    return {
+        "items": [],
+        "sales": [],
+        "money": {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0},
+        "item_counter": 1,
+        "users": []  # Список ID пользователей, у которых есть доступ
+    }
 
-def save_data(data):
+def save_data():
+    """Сохраняет общую базу в файл"""
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(user_data, f, ensure_ascii=False, indent=2)
 
+# Загружаем данные при старте
 user_data = load_data()
 
-# ========== ФУНКЦИЯ ДЛЯ ПРОВЕРКИ/СОЗДАНИЯ ПОЛЬЗОВАТЕЛЯ ==========
+# ========== ФУНКЦИЯ ДЛЯ ПРОВЕРКИ/ДОБАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯ ==========
 def ensure_user(user_id):
-    if user_id not in user_data:
-        user_data[user_id] = {
-            "items": [],
-            "sales": [],
-            "money": {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0},
-            "item_counter": 1
-        }
-        save_data(user_data)
+    """Проверяет, есть ли пользователь в списке разрешённых"""
+    if user_id not in user_data.get("users", []):
+        user_data["users"].append(user_id)
+        save_data()
         return True
     return False
 
+def get_all_items():
+    """Возвращает все вещи из общей базы"""
+    return user_data.get("items", [])
+
+def get_all_sales():
+    """Возвращает все продажи из общей базы"""
+    return user_data.get("sales", [])
+
+def get_money():
+    """Возвращает общие деньги"""
+    return user_data.get("money", {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0})
+
 # ========== ФУНКЦИЯ ДЛЯ ПЕРЕСЧЁТА КОНВЕРТОВ ==========
-def recalculate_money(user_id):
+def recalculate_money():
     """Пересчитывает деньги из всех продаж заново"""
-    sales = user_data[user_id].get("sales", [])
+    sales = get_all_sales()
     money = {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0}
     for sale in sales:
         price = sale.get("price", 0)
@@ -59,7 +80,8 @@ def recalculate_money(user_id):
         money["post"] += int(price * 0.15)
         money["pillow"] += int(price * 0.1)
         money["dream"] += int(price * 0.05)
-    user_data[user_id]["money"] = money
+    user_data["money"] = money
+    save_data()
 
 # ========== БИБЛИОТЕКА ПРОМТОВ ==========
 PROMPTS = {
@@ -161,16 +183,16 @@ async def check_reminders():
         current_time = now.strftime("%H:%M")
         if current_time == "09:00" and last_morning != now.strftime("%d.%m.%Y"):
             last_morning = now.strftime("%d.%m.%Y")
-            for user_id in user_data.keys():
+            for user_id in user_data.get("users", []):
                 try:
                     await bot.send_message(user_id, random.choice(MORNING_MESSAGES), parse_mode="HTML")
                 except:
                     pass
         if current_time == "19:00" and last_evening != now.strftime("%d.%m.%Y"):
             last_evening = now.strftime("%d.%m.%Y")
-            for user_id in user_data.keys():
+            for user_id in user_data.get("users", []):
                 try:
-                    sales_today = len([s for s in user_data[user_id].get("sales", []) if s.get("date") == datetime.now().strftime("%d.%m.%Y")])
+                    sales_today = len([s for s in get_all_sales() if s.get("date") == datetime.now().strftime("%d.%m.%Y")])
                     msg = random.choice(EVENING_MESSAGES)
                     await bot.send_message(user_id, f"{msg}\n\n📊 Продано сегодня: {sales_today} вещей", parse_mode="HTML")
                 except:
@@ -206,7 +228,7 @@ async def show_strategy(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
     ensure_user(user_id)
-    sales = user_data.get(user_id, {}).get("sales", [])
+    sales = get_all_sales()
     sales_today = len([s for s in sales if s.get("date") == datetime.now().strftime("%d.%m.%Y")])
     text = (f"📅 <b>План на сегодня</b>\n\n✅ Продано сегодня: {sales_today} / 3\n\n📋 <b>Чек-лист:</b>\n1️⃣ Сфотографируй 5 вещей\n2️⃣ Выложи их на Авито в 19:00\n3️⃣ Обнови 10 старых объявлений\n4️⃣ Ответь на все сообщения\n5️⃣ Добавь все продажи в бота\n\n🔥 <b>Совет:</b> Если вещь не продаётся 2 недели — отдай за 199 ₽")
     await callback.message.delete()
@@ -249,7 +271,7 @@ async def show_top_sales(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
     ensure_user(user_id)
-    sales = user_data.get(user_id, {}).get("sales", [])
+    sales = get_all_sales()
     if not sales:
         text = "🏆 Ты пока ничего не продала. Добавь первую продажу через кнопку «💰 Добавить продажу»"
     else:
@@ -364,9 +386,13 @@ async def save_item(message: Message, state: FSMContext):
         price = int(message.text)
         data = await state.get_data()
         
-        item_id = user_data[user_id]["item_counter"]
-        user_data[user_id]["item_counter"] += 1
-        user_data[user_id]["items"].append({
+        item_id = user_data.get("item_counter", 1)
+        user_data["item_counter"] = item_id + 1
+        
+        # Добавляем вещь в общую базу
+        if "items" not in user_data:
+            user_data["items"] = []
+        user_data["items"].append({
             "id": item_id,
             "name": data.get("name"),
             "size": data.get("size"),
@@ -378,7 +404,8 @@ async def save_item(message: Message, state: FSMContext):
             "status": "active",
             "created": datetime.now().strftime("%d.%m.%Y")
         })
-        save_data(user_data)
+        save_data()
+        
         await message.answer_photo(
             data.get("photo"),
             caption=(
@@ -401,7 +428,7 @@ async def save_item(message: Message, state: FSMContext):
             reply_markup=back_button("item_back_to_price")
         )
 
-# ========== ОБРАБОТЧИКИ ВОЗВРАТА НА ШАГ ПРИ ДОБАВЛЕНИИ ==========
+# ========== ОБРАБОТЧИКИ ВОЗВРАТА НА ШАГ ==========
 @dp.callback_query(lambda c: c.data == "item_back_to_name")
 async def back_to_name(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -469,7 +496,7 @@ async def edit_item_menu_handler(callback: CallbackQuery, state: FSMContext):
     user_id = str(callback.from_user.id)
     ensure_user(user_id)
     item_id = int(callback.data.split("_")[2])
-    items = user_data.get(user_id, {}).get("items", [])
+    items = get_all_items()
     item = next((i for i in items if i.get("id") == item_id), None)
     
     if not item:
@@ -589,7 +616,7 @@ async def save_edit_value(message: Message, state: FSMContext):
     field = data.get("field")
     new_value = message.text.strip()
     
-    items = user_data.get(user_id, {}).get("items", [])
+    items = get_all_items()
     item = next((i for i in items if i.get("id") == item_id), None)
     
     if not item:
@@ -608,7 +635,7 @@ async def save_edit_value(message: Message, state: FSMContext):
             new_value = ""
     
     item[field] = new_value
-    save_data(user_data)
+    save_data()
     
     await message.answer(
         f"✅ <b>Изменения сохранены!</b>\n\n"
@@ -640,7 +667,7 @@ async def delete_item_confirm(callback: CallbackQuery, state: FSMContext):
     ensure_user(user_id)
     item_id = int(callback.data.split("_")[2])
     
-    items = user_data.get(user_id, {}).get("items", [])
+    items = get_all_items()
     item = next((i for i in items if i.get("id") == item_id), None)
     
     if not item:
@@ -668,7 +695,7 @@ async def confirm_delete_item(callback: CallbackQuery, state: FSMContext):
     ensure_user(user_id)
     item_id = int(callback.data.split("_")[2])
     
-    items = user_data.get(user_id, {}).get("items", [])
+    items = get_all_items()
     item = next((i for i in items if i.get("id") == item_id), None)
     
     if not item:
@@ -678,15 +705,15 @@ async def confirm_delete_item(callback: CallbackQuery, state: FSMContext):
         return
     
     # Удаляем вещь
-    user_data[user_id]["items"] = [i for i in items if i.get("id") != item_id]
+    user_data["items"] = [i for i in items if i.get("id") != item_id]
     
     # Удаляем все продажи, связанные с этой вещью
-    sales = user_data[user_id].get("sales", [])
-    user_data[user_id]["sales"] = [s for s in sales if s.get("item_id") != item_id]
+    sales = get_all_sales()
+    user_data["sales"] = [s for s in sales if s.get("item_id") != item_id]
     
     # Пересчитываем деньги из оставшихся продаж
-    recalculate_money(user_id)
-    save_data(user_data)
+    recalculate_money()
+    save_data()
     
     await callback.message.delete()
     await callback.message.answer(
@@ -714,7 +741,7 @@ async def show_items(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
     ensure_user(user_id)
-    items = user_data.get(user_id, {}).get("items", [])
+    items = get_all_items()
     
     if not items:
         await callback.message.delete()
@@ -750,7 +777,7 @@ async def show_items_list(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
     ensure_user(user_id)
-    items = user_data.get(user_id, {}).get("items", [])
+    items = get_all_items()
     if not items:
         text = "📋 Пока нет ни одной вещи."
     else:
@@ -782,7 +809,7 @@ async def search_item_result(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
     ensure_user(user_id)
     query = message.text.lower()
-    items = user_data.get(user_id, {}).get("items", [])
+    items = get_all_items()
     found = []
     for item in items:
         if (query in item.get("name", "").lower() or query in item.get("size", "").lower() or query in item.get("color", "").lower() or query in item.get("category", "").lower() or query in item.get("tags", "").lower()):
@@ -817,7 +844,7 @@ async def get_sale_price(message: Message, state: FSMContext):
     ensure_user(user_id)
     try:
         item_id = int(message.text)
-        items = user_data.get(user_id, {}).get("items", [])
+        items = get_all_items()
         item = next((i for i in items if i.get("id") == item_id), None)
         if not item:
             await message.answer("❌ Вещь с таким ID не найдена. Попробуй ещё раз.", reply_markup=back_to_menu_button())
@@ -842,18 +869,23 @@ async def save_sale(message: Message, state: FSMContext):
         item_id = data.get("item_id")
         item_name = data.get("item_name", "Без названия")
         
-        user_data[user_id]["sales"].append({
+        if "sales" not in user_data:
+            user_data["sales"] = []
+        user_data["sales"].append({
             "item_id": item_id,
             "name": item_name,
             "price": price,
             "date": datetime.now().strftime("%d.%m.%Y")
         })
-        for item in user_data[user_id]["items"]:
+        
+        # Обновляем статус вещи
+        for item in user_data["items"]:
             if item.get("id") == item_id:
                 item["status"] = "sold"
                 break
-        recalculate_money(user_id)
-        save_data(user_data)
+        
+        recalculate_money()
+        save_data()
         
         await message.answer(
             f"✅ Продажа записана!\n\n🆔 Вещь #{item_id}\n📦 {item_name} — {price} ₽\n\n<b>Деньги разложены:</b>\n👩 Себе (30%): {int(price*0.3)} ₽\n📦 Оборот (40%): {int(price*0.4)} ₽\n📮 Почта (15%): {int(price*0.15)} ₽\n🛡️ Подушка (10%): {int(price*0.1)} ₽\n✨ Мечта (5%): {int(price*0.05)} ₽",
@@ -864,16 +896,16 @@ async def save_sale(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Ошибка! Введи число", reply_markup=back_to_menu_button())
 
-# ========== СТАТИСТИКА (С КНОПКОЙ ОТМЕНЫ ПОСЛЕДНЕЙ ПРОДАЖИ) ==========
+# ========== СТАТИСТИКА ==========
 @dp.callback_query(lambda c: c.data == "stats")
 async def show_stats(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
     ensure_user(user_id)
-    data = user_data.get(user_id, {})
-    sales = data.get("sales", [])
-    items = data.get("items", [])
-    money = data.get("money", {})
+    sales = get_all_sales()
+    items = get_all_items()
+    money = get_money()
+    
     total_sales = len(sales)
     total_revenue = sum(s.get("price", 0) for s in sales)
     avg_price = int(total_revenue / total_sales) if total_sales > 0 else 0
@@ -902,7 +934,7 @@ async def undo_last_sale(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
     ensure_user(user_id)
-    sales = user_data.get(user_id, {}).get("sales", [])
+    sales = get_all_sales()
     
     if not sales:
         await callback.message.delete()
@@ -916,17 +948,16 @@ async def undo_last_sale(callback: CallbackQuery, state: FSMContext):
     price = last_sale.get("price", 0)
     
     # Удаляем последнюю продажу
-    user_data[user_id]["sales"] = sales[:-1]
+    user_data["sales"] = sales[:-1]
     
-    # Возвращаем вещь в активные (если она ещё есть в списке)
-    for item in user_data[user_id]["items"]:
+    # Возвращаем вещь в активные
+    for item in user_data["items"]:
         if item.get("id") == item_id:
             item["status"] = "active"
             break
     
-    # Пересчитываем деньги
-    recalculate_money(user_id)
-    save_data(user_data)
+    recalculate_money()
+    save_data()
     
     await callback.message.delete()
     await callback.message.answer(
@@ -954,7 +985,10 @@ async def show_scripts(callback: CallbackQuery, state: FSMContext):
 
 # ========== ЗАПУСК ==========
 async def main():
-    print("✅ Бот с удалением и отменой продаж запущен!")
+    print("✅ Бот с общей базой данных запущен!")
+    print(f"📂 Данные сохраняются в: {DATA_FILE}")
+    print(f"📦 Всего вещей: {len(get_all_items())}")
+    print(f"💰 Всего продаж: {len(get_all_sales())}")
     asyncio.create_task(check_reminders())
     await dp.start_polling(bot)
 
