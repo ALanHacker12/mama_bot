@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -23,7 +23,6 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ========== ХРАНИЛИЩЕ ==========
 def load_data():
     if os.path.exists(DATA_FILE):
         try:
@@ -40,7 +39,6 @@ def save_data(data):
 
 user_data = load_data()
 
-# ========== ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ДОСТУПА ==========
 def ensure_user(user_id):
     if user_id not in ALLOWED_USERS:
         return False
@@ -49,6 +47,7 @@ def ensure_user(user_id):
             "items": [],
             "sales": [],
             "money": {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0},
+            "expenses": 0,
             "item_counter": 1
         }
         save_data(user_data)
@@ -73,48 +72,28 @@ def recalculate_money():
         money["dream"] += int(price * 0.05)
     user_data["shared"]["money"] = money
 
-# ========== ПЕРЕВОД КАТЕГОРИЙ ДЛЯ ПРОМТОВ ==========
+# ========== ПЕРЕВОД КАТЕГОРИЙ ==========
 CATEGORY_TRANSLATE = {
-    "Платье": "dress",
-    "Платья": "dress",
-    "Пальто": "coat",
-    "Куртка": "coat",
-    "Куртки": "coat",
-    "Джинсы": "jeans",
-    "Брюки": "pants",
-    "Кофта": "sweater",
-    "Кофты": "sweater",
-    "Свитер": "sweater",
-    "Рубашка": "shirt",
-    "Блузка": "blouse",
-    "Шорты": "shorts",
-    "Юбка": "skirt",
+    "Платье": "dress", "Платья": "dress",
+    "Пальто": "coat", "Куртка": "coat", "Куртки": "coat",
+    "Джинсы": "jeans", "Брюки": "pants",
+    "Кофта": "sweater", "Кофты": "sweater", "Свитер": "sweater",
+    "Рубашка": "shirt", "Блузка": "blouse",
+    "Шорты": "shorts", "Юбка": "skirt",
     "Пиджак": "jacket",
     "Боди": "bodysuit",
     "Туника": "tunic",
     "Футболка": "tshirt"
 }
 
-# ========== БИБЛИОТЕКА ПРОМТОВ ==========
 PROMPT_TEMPLATES = {
     "dress": "Professional fashion photography. A beautiful women's {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
     "coat": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
     "jeans": "Professional product photography. A pair of {category} perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original fit, folds, denim texture, and colors. Tags and labels must stay inside. Soft studio lighting. 8k, sharp focus, commercial quality.",
-    "pants": "Professional product photography. A pair of {category} perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original fit, folds, fabric texture, and colors. Tags and labels must stay inside. Soft studio lighting. 8k, sharp focus, commercial quality.",
-    "sweater": "Professional knitwear photography. A cozy {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the original shape, knit texture, drape, and colors. Labels must remain hidden inside. Soft natural lighting. 8k, hyper-realistic, commercial quality.",
-    "blouse": "Professional shirt photography. A crisp {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the original shape, collar, cuffs, fabric texture, and colors. Tags must stay inside. Bright studio lighting. 8k, sharp focus, commercial catalog quality.",
-    "shirt": "Professional shirt photography. A crisp {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the original shape, collar, cuffs, fabric texture, and colors. Tags must stay inside. Bright studio lighting. 8k, sharp focus, commercial catalog quality.",
-    "shorts": "Professional bottom wear photography. A stylish {category} perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original shape, draping, fabric texture, and colors. Labels must remain inside. Soft diffused lighting. 8k, commercial quality.",
-    "skirt": "Professional bottom wear photography. A stylish {category} perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original shape, draping, fabric texture, and colors. Labels must remain inside. Soft diffused lighting. 8k, commercial quality.",
-    "jacket": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
-    "bodysuit": "Professional fashion photography. A beautiful {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
-    "tunic": "Professional fashion photography. A beautiful {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
-    "tshirt": "Professional fashion photography. A beautiful {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
     "default": "Professional product photography. The garment perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original shape, fabric texture, colors, and all details. All tags and labels must remain hidden inside. Soft studio lighting. 8k, hyper-realistic, commercial catalog quality."
 }
 
 def get_prompt_for_category(category, item_name):
-    """Возвращает промт для категории"""
     category_en = CATEGORY_TRANSLATE.get(category, "garment")
     template = PROMPT_TEMPLATES.get(category_en, PROMPT_TEMPLATES["default"])
     return template.format(category=item_name)
@@ -213,6 +192,9 @@ class SaleForm(StatesGroup):
 class SearchForm(StatesGroup):
     query = State()
 
+class ExpenseForm(StatesGroup):
+    amount = State()
+
 # ========== НАПОМИНАНИЯ ==========
 async def check_reminders():
     last_morning = None
@@ -260,7 +242,7 @@ async def start(message: Message, state: FSMContext):
         reply_markup=main_menu()
     )
 
-# ========== НАЗАД В ГЛАВНОЕ МЕНЮ ==========
+# ========== НАЗАД ==========
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -295,7 +277,7 @@ async def show_strategy(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(text, parse_mode="HTML", reply_markup=back_to_menu_button())
     await callback.answer()
 
-# ========== ПРОМТЫ С УМНОЙ КАТЕГОРИЕЙ ==========
+# ========== ПРОМТЫ ==========
 @dp.callback_query(lambda c: c.data == "prompt_menu")
 async def prompt_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -365,7 +347,7 @@ async def show_top_sales(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(text, parse_mode="HTML", reply_markup=back_to_menu_button())
     await callback.answer()
 
-# ========== ДОБАВЛЕНИЕ ВЕЩИ (5 ФОТО) ==========
+# ========== ДОБАВЛЕНИЕ ВЕЩИ ==========
 @dp.callback_query(lambda c: c.data == "add_item_menu")
 async def add_item_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -536,7 +518,6 @@ async def save_item(message: Message, state: FSMContext):
         })
         save_data(user_data)
         
-        # Отправляем все фото
         for photo_id in data.get("photos", [])[:5]:
             await message.answer_photo(photo_id)
         
@@ -560,7 +541,7 @@ async def save_item(message: Message, state: FSMContext):
             reply_markup=back_button("item_back_to_price")
         )
 
-# ========== ОБРАБОТЧИКИ ВОЗВРАТА НА ШАГ ==========
+# ========== ОБРАБОТЧИКИ ВОЗВРАТА ==========
 @dp.callback_query(lambda c: c.data == "item_back_to_name")
 async def back_to_name(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -1004,7 +985,7 @@ async def cancel_delete_item(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("❌ Удаление отменено.", reply_markup=main_menu())
     await callback.answer()
 
-# ========== МОИ ВЕЩИ (ВСЕ ВЕЩИ БЕЗ ОГРАНИЧЕНИЙ) ==========
+# ========== МОИ ВЕЩИ ==========
 @dp.callback_query(lambda c: c.data == "items")
 async def show_items(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -1024,7 +1005,6 @@ async def show_items(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("📸 У тебя пока нет вещей в базе.\n\nДобавь первую вещь через кнопку «➕ Добавить вещь»", reply_markup=back_to_menu_button())
         await callback.answer()
         return
-    # Показываем ВСЕ вещи (без ограничения)
     total = len(items)
     active = len([i for i in items if i.get("status") == "active"])
     await callback.message.delete()
@@ -1045,7 +1025,6 @@ async def show_items(callback: CallbackQuery, state: FSMContext):
                        f"🏷️ Теги: {item.get('tags', 'нет')}\n"
                        f"💰 {item['price']} ₽\n"
                        f"📅 {item.get('created', '')}")
-            # Показываем все фото
             photos = item.get("photos", [])
             if photos:
                 await callback.message.answer_photo(photos[0], caption=caption, parse_mode="HTML", reply_markup=item_actions_menu(item['id']))
@@ -1054,7 +1033,7 @@ async def show_items(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("✅ Все вещи показаны.", reply_markup=back_to_menu_button())
     await callback.answer()
 
-# ========== ПОИСК (УМНЫЙ + БЕЗ ОГРАНИЧЕНИЙ + СТАТУС) ==========
+# ========== ПОИСК ==========
 @dp.callback_query(lambda c: c.data == "search_item")
 async def search_item_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -1090,7 +1069,7 @@ async def search_item_result(message: Message, state: FSMContext):
     
     found = []
     for item in items:
-        # Поиск по ID (если запрос — число)
+        # Поиск по ID
         if query.isdigit() and item.get("id") == int(query):
             found.append(item)
             continue
@@ -1205,7 +1184,7 @@ async def save_sale(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Ошибка! Введи число", reply_markup=back_to_menu_button())
 
-# ========== СТАТИСТИКА ==========
+# ========== СТАТИСТИКА (С ОТЧЁТОМ И РАСХОДАМИ) ==========
 @dp.callback_query(lambda c: c.data == "stats")
 async def show_stats(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -1219,14 +1198,20 @@ async def show_stats(callback: CallbackQuery, state: FSMContext):
     if "shared" not in user_data:
         sales = []
         items = []
+        expenses = 0
         money = {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0}
     else:
         sales = user_data["shared"].get("sales", [])
         items = user_data["shared"].get("items", [])
+        expenses = user_data["shared"].get("expenses", 0)
         money = user_data["shared"].get("money", {"salary": 0, "turnover": 0, "post": 0, "pillow": 0, "dream": 0})
+    
     total_sales = len(sales)
     total_revenue = sum(s.get("price", 0) for s in sales)
     avg_price = int(total_revenue / total_sales) if total_sales > 0 else 0
+    total_items_sum = sum(item.get("price", 0) for item in items)
+    net_profit = total_revenue - expenses
+    
     categories = {}
     for item in items:
         cat = item.get("category", "Другое")
@@ -1236,15 +1221,21 @@ async def show_stats(callback: CallbackQuery, state: FSMContext):
         cat_text += f"{cat}: {count} шт.\n"
     if not cat_text:
         cat_text = "Пока нет категорий"
+    
     kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💰 Добавить расходы на партию", callback_data="add_expense")],
         [InlineKeyboardButton(text="↩️ Отменить последнюю продажу", callback_data="undo_last_sale")],
         [InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_menu")]
     ])
+    
     stats_text = (f"📊 <b>Твоя статистика</b>\n\n"
                   f"📦 Продано: {total_sales} шт.\n"
                   f"💰 Выручка: {total_revenue} ₽\n"
                   f"📈 Средний чек: {avg_price} ₽\n"
-                  f"📸 Всего вещей: {len(items)} шт.\n\n"
+                  f"📸 Всего вещей: {len(items)} шт.\n"
+                  f"💎 Общая сумма всех вещей: {total_items_sum} ₽\n"
+                  f"📦 Расходы на партию: {expenses} ₽\n"
+                  f"📈 Чистая прибыль: {net_profit} ₽\n\n"
                   f"<b>📂 Категории:</b>\n{cat_text}\n"
                   f"<b>💰 Конверты:</b>\n"
                   f"👩 Себе: {money.get('salary', 0)} ₽\n"
@@ -1255,6 +1246,55 @@ async def show_stats(callback: CallbackQuery, state: FSMContext):
     await callback.message.delete()
     await callback.message.answer(stats_text, parse_mode="HTML", reply_markup=kb)
     await callback.answer()
+
+# ========== ДОБАВЛЕНИЕ РАСХОДОВ ==========
+@dp.callback_query(lambda c: c.data == "add_expense")
+async def add_expense_start(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
+    ensure_user(user_id)
+    await callback.message.delete()
+    await callback.message.answer(
+        "💰 <b>Добавить расходы на новую партию</b>\n\n"
+        "Напиши сумму, которую ты потратила на закупку новых вещей (число):",
+        parse_mode="HTML",
+        reply_markup=back_to_menu_button()
+    )
+    await state.set_state(ExpenseForm.amount)
+    await callback.answer()
+
+@dp.message(ExpenseForm.amount)
+async def save_expense(message: Message, state: FSMContext):
+    user_id = str(message.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await message.answer("❌ У тебя нет доступа.")
+        await state.clear()
+        return
+    ensure_user(user_id)
+    try:
+        amount = int(message.text.strip())
+        if amount <= 0:
+            await message.answer("❌ Сумма должна быть больше 0. Попробуй ещё раз.", reply_markup=back_to_menu_button())
+            return
+        if "shared" not in user_data:
+            user_data["shared"] = {"expenses": 0}
+        user_data["shared"]["expenses"] = user_data["shared"].get("expenses", 0) + amount
+        save_data(user_data)
+        await message.answer(
+            f"✅ <b>Расходы добавлены!</b>\n\n"
+            f"💰 Сумма: {amount} ₽\n"
+            f"📦 Всего расходов: {user_data['shared']['expenses']} ₽",
+            parse_mode="HTML",
+            reply_markup=main_menu()
+        )
+        await state.clear()
+    except ValueError:
+        await message.answer("❌ Ошибка! Введи число, например: 5000", reply_markup=back_to_menu_button())
 
 # ========== ОТМЕНА ПОСЛЕДНЕЙ ПРОДАЖИ ==========
 @dp.callback_query(lambda c: c.data == "undo_last_sale")
@@ -1320,7 +1360,7 @@ async def show_scripts(callback: CallbackQuery, state: FSMContext):
 
 # ========== ЗАПУСК ==========
 async def main():
-    print("✅ Бот с обновлённым поиском, всеми вещами и 5 фото запущен!")
+    print("✅ Бот с обновлённым поиском, всеми вещами, 5 фото и отчётом запущен!")
     asyncio.create_task(check_reminders())
     await dp.start_polling(bot)
 
