@@ -74,7 +74,7 @@ def recalculate_money():
 
 # ========== ПЕРЕВОД КАТЕГОРИЙ ==========
 CATEGORY_TRANSLATE = {
-    "Платье": "dress", "Платья": "dress",
+    "Платье": "dress", "Платья": "dress", "Платье": "dress",
     "Пальто": "coat", "Куртка": "coat", "Куртки": "coat",
     "Джинсы": "jeans", "Брюки": "pants",
     "Кофта": "sweater", "Кофты": "sweater", "Свитер": "sweater",
@@ -83,20 +83,40 @@ CATEGORY_TRANSLATE = {
     "Пиджак": "jacket",
     "Боди": "bodysuit",
     "Туника": "tunic",
-    "Футболка": "tshirt"
+    "Футболка": "tshirt",
+    "Бомбер": "bomber",
+    "Тренч": "trench",
+    "Кардиган": "cardigan",
+    "Сарафан": "sundress",
+    "Костюм": "suit"
 }
 
 PROMPT_TEMPLATES = {
     "dress": "Professional fashion photography. A beautiful women's {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
     "coat": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
     "jeans": "Professional product photography. A pair of {category} perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original fit, folds, denim texture, and colors. Tags and labels must stay inside. Soft studio lighting. 8k, sharp focus, commercial quality.",
+    "pants": "Professional product photography. A pair of {category} perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original fit, folds, fabric texture, and colors. Tags and labels must stay inside. Soft studio lighting. 8k, sharp focus, commercial quality.",
+    "sweater": "Professional knitwear photography. A cozy {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the original shape, knit texture, drape, and colors. Labels must remain hidden inside. Soft natural lighting. 8k, hyper-realistic, commercial quality.",
+    "blouse": "Professional shirt photography. A crisp {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the original shape, collar, cuffs, fabric texture, and colors. Tags must stay inside. Bright studio lighting. 8k, sharp focus, commercial catalog quality.",
+    "shirt": "Professional shirt photography. A crisp {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the original shape, collar, cuffs, fabric texture, and colors. Tags must stay inside. Bright studio lighting. 8k, sharp focus, commercial catalog quality.",
+    "shorts": "Professional bottom wear photography. A stylish {category} perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original shape, draping, fabric texture, and colors. Labels must remain inside. Soft diffused lighting. 8k, commercial quality.",
+    "skirt": "Professional bottom wear photography. A stylish {category} perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original shape, draping, fabric texture, and colors. Labels must remain inside. Soft diffused lighting. 8k, commercial quality.",
+    "jacket": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
+    "bodysuit": "Professional fashion photography. A beautiful {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
+    "tunic": "Professional fashion photography. A beautiful {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
+    "tshirt": "Professional fashion photography. A beautiful {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
+    "bomber": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
+    "trench": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
+    "cardigan": "Professional knitwear photography. A cozy {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the original shape, knit texture, drape, and colors. Labels must remain hidden inside. Soft natural lighting. 8k, hyper-realistic, commercial quality.",
+    "sundress": "Professional fashion photography. A beautiful women's {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
+    "suit": "Professional fashion photography. A beautiful women's {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
     "default": "Professional product photography. The garment perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original shape, fabric texture, colors, and all details. All tags and labels must remain hidden inside. Soft studio lighting. 8k, hyper-realistic, commercial catalog quality."
 }
 
 def get_prompt_for_category(category, item_name):
     category_en = CATEGORY_TRANSLATE.get(category, "garment")
     template = PROMPT_TEMPLATES.get(category_en, PROMPT_TEMPLATES["default"])
-    return template.format(category=item_name)
+    return template.format(category=item_name or category)
 
 # ========== КЛАВИАТУРЫ ==========
 def main_menu():
@@ -122,19 +142,6 @@ def back_to_menu_button():
 def back_button(callback_data):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 На шаг назад", callback_data=callback_data)]
-    ])
-    return kb
-
-def prompt_category_menu():
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👗 Платье", callback_data="prompt_dress")],
-        [InlineKeyboardButton(text="🧥 Пальто/Куртка", callback_data="prompt_coat")],
-        [InlineKeyboardButton(text="👖 Джинсы/Брюки", callback_data="prompt_pants")],
-        [InlineKeyboardButton(text="👚 Кофта/Свитер", callback_data="prompt_sweater")],
-        [InlineKeyboardButton(text="👕 Рубашка/Блузка", callback_data="prompt_shirt")],
-        [InlineKeyboardButton(text="🩳 Шорты/Юбка", callback_data="prompt_short")],
-        [InlineKeyboardButton(text="👔 Другое", callback_data="prompt_default")],
-        [InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_menu")]
     ])
     return kb
 
@@ -277,7 +284,7 @@ async def show_strategy(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(text, parse_mode="HTML", reply_markup=back_to_menu_button())
     await callback.answer()
 
-# ========== ПРОМТЫ ==========
+# ========== ПРОМТЫ (АВТОМАТИЧЕСКИ ИЗ КАТЕГОРИЙ СТАТИСТИКИ) ==========
 @dp.callback_query(lambda c: c.data == "prompt_menu")
 async def prompt_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -288,15 +295,44 @@ async def prompt_menu(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     ensure_user(user_id)
+    
+    if "shared" not in user_data:
+        await callback.message.delete()
+        await callback.message.answer("❌ Нет вещей в базе. Добавь сначала вещи.", reply_markup=back_to_menu_button())
+        await callback.answer()
+        return
+    
+    items = user_data["shared"].get("items", [])
+    categories = {}
+    for item in items:
+        cat = item.get("category", "Другое")
+        categories[cat] = categories.get(cat, 0) + 1
+    
+    if not categories:
+        await callback.message.delete()
+        await callback.message.answer("❌ Нет категорий. Добавь сначала вещи.", reply_markup=back_to_menu_button())
+        await callback.answer()
+        return
+    
+    # Создаём клавиатуру из категорий
+    kb_buttons = []
+    for cat, count in categories.items():
+        kb_buttons.append([InlineKeyboardButton(text=f"{cat} ({count})", callback_data=f"prompt_cat_{cat}")])
+    kb_buttons.append([InlineKeyboardButton(text="🔙 В главное меню", callback_data="back_to_menu")])
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+    
     await callback.message.delete()
     await callback.message.answer(
-        "🎨 <b>Выбери категорию вещи</b>\n\nЯ выдам готовый промт для генерации фото на манекене.\nПросто скопируй его и вставь в Nano Banana / любую нейросеть.\n\n⬇️ Выбери категорию:",
+        "🎨 <b>Выбери категорию вещи</b>\n\n"
+        "Я выдам готовый промт для генерации фото на манекене.\n"
+        "Просто скопируй его и вставь в Nano Banana / любую нейросеть.\n\n"
+        "⬇️ Выбери категорию:",
         parse_mode="HTML",
-        reply_markup=prompt_category_menu()
+        reply_markup=kb
     )
     await callback.answer()
 
-@dp.callback_query(lambda c: c.data.startswith("prompt_"))
+@dp.callback_query(lambda c: c.data.startswith("prompt_cat_"))
 async def prompt_category_selected(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_id = str(callback.from_user.id)
@@ -306,12 +342,21 @@ async def prompt_category_selected(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     ensure_user(user_id)
-    category_map = {"prompt_dress": "dress", "prompt_coat": "coat", "prompt_pants": "pants", "prompt_sweater": "sweater", "prompt_shirt": "shirt", "prompt_short": "short", "prompt_default": "default"}
-    category_key = category_map.get(callback.data, "default")
-    prompt_data = PROMPT_TEMPLATES.get(category_key, PROMPT_TEMPLATES["default"])
+    
+    category = callback.data.replace("prompt_cat_", "")
+    prompt = get_prompt_for_category(category, category)
+    
     await callback.message.delete()
     await callback.message.answer(
-        f"🎨 <b>Промт для категории</b>\n\n<b>⬇️ Скопируй этот текст:</b>\n<code>{prompt_data}</code>\n\n📌 <b>Инструкция:</b>\n1️⃣ Скопируй текст выше\n2️⃣ Вставь в нейросеть (Nano Banana, Midjourney, Kandinsky)\n3️⃣ Загрузи своё фото вещи\n4️⃣ Нажми «Сгенерировать»\n\n✨ Получишь профессиональное фото на манекене!",
+        f"🎨 <b>Промт для категории «{category}»</b>\n\n"
+        f"<b>⬇️ Скопируй этот текст:</b>\n"
+        f"<code>{prompt}</code>\n\n"
+        "📌 <b>Инструкция:</b>\n"
+        "1️⃣ Скопируй текст выше\n"
+        "2️⃣ Вставь в нейросеть (Nano Banana, Midjourney, Kandinsky)\n"
+        "3️⃣ Загрузи своё фото вещи\n"
+        "4️⃣ Нажми «Сгенерировать»\n\n"
+        "✨ Получишь профессиональное фото на манекене!",
         parse_mode="HTML",
         reply_markup=back_to_menu_button()
     )
@@ -1000,13 +1045,16 @@ async def show_items(callback: CallbackQuery, state: FSMContext):
         items = []
     else:
         items = user_data["shared"].get("items", [])
+    
     if not items:
         await callback.message.delete()
         await callback.message.answer("📸 У тебя пока нет вещей в базе.\n\nДобавь первую вещь через кнопку «➕ Добавить вещь»", reply_markup=back_to_menu_button())
         await callback.answer()
         return
+    
     total = len(items)
     active = len([i for i in items if i.get("status") == "active"])
+    
     await callback.message.delete()
     await callback.message.answer(
         f"📸 <b>Все вещи ({total} шт.)</b>\n"
@@ -1014,6 +1062,7 @@ async def show_items(callback: CallbackQuery, state: FSMContext):
         f"⬇️ Показываю все вещи:",
         parse_mode="HTML"
     )
+    
     for item in items:
         if item.get("photos"):
             status_emoji = "✅" if item.get("status") == "active" else "❌"
@@ -1027,10 +1076,64 @@ async def show_items(callback: CallbackQuery, state: FSMContext):
                        f"📅 {item.get('created', '')}")
             photos = item.get("photos", [])
             if photos:
-                await callback.message.answer_photo(photos[0], caption=caption, parse_mode="HTML", reply_markup=item_actions_menu(item['id']))
+                await callback.message.answer_photo(
+                    photos[0],
+                    caption=caption,
+                    parse_mode="HTML",
+                    reply_markup=item_actions_menu(item['id'])
+                )
                 for photo_id in photos[1:]:
                     await callback.message.answer_photo(photo_id)
-    await callback.message.answer("✅ Все вещи показаны.", reply_markup=back_to_menu_button())
+        elif item.get("photo"):
+            status_emoji = "✅" if item.get("status") == "active" else "❌"
+            caption = (f"{status_emoji} <b>ID:</b> {item['id']}\n"
+                       f"📦 {item['name']}\n"
+                       f"📏 Размер: {item['size']}\n"
+                       f"🎨 Цвет: {item['color']}\n"
+                       f"🏷️ {item['category']}\n"
+                       f"🏷️ Теги: {item.get('tags', 'нет')}\n"
+                       f"💰 {item['price']} ₽\n"
+                       f"📅 {item.get('created', '')}")
+            await callback.message.answer_photo(
+                item['photo'],
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=item_actions_menu(item['id'])
+            )
+    
+    await show_items_list(callback, state)
+
+# ========== СПИСОК ВСЕХ ВЕЩЕЙ С ГАЛОЧКАМИ ==========
+@dp.callback_query(lambda c: c.data == "items_list")
+async def show_items_list(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    user_id = str(callback.from_user.id)
+    if user_id not in ALLOWED_USERS:
+        await callback.message.delete()
+        await callback.message.answer("❌ У тебя нет доступа.")
+        await callback.answer()
+        return
+    ensure_user(user_id)
+    if "shared" not in user_data:
+        items = []
+    else:
+        items = user_data["shared"].get("items", [])
+    
+    if not items:
+        text = "📋 Пока нет ни одной вещи."
+    else:
+        active = [i for i in items if i.get("status") == "active"]
+        sold = [i for i in items if i.get("status") == "sold"]
+        text = f"📋 <b>Список всех вещей</b>\n\n✅ Активных: {len(active)}\n❌ Продано: {len(sold)}\n\n"
+        for item in items:
+            status = "✅" if item.get("status") == "active" else "❌"
+            text += f"{status} 🆔{item['id']} | {item['name']} | {item['size']} | {item.get('category', '')}\n"
+    
+    await callback.message.answer(
+        text,
+        parse_mode="HTML",
+        reply_markup=back_to_menu_button()
+    )
     await callback.answer()
 
 # ========== ПОИСК ==========
@@ -1069,11 +1172,9 @@ async def search_item_result(message: Message, state: FSMContext):
     
     found = []
     for item in items:
-        # Поиск по ID
         if query.isdigit() and item.get("id") == int(query):
             found.append(item)
             continue
-        # Поиск по тексту
         if (query in str(item.get("id")).lower() or
             query in item.get("name", "").lower() or 
             query in item.get("size", "").lower() or 
@@ -1087,7 +1188,8 @@ async def search_item_result(message: Message, state: FSMContext):
         await state.clear()
         return
     
-    await message.answer(f"✅ Найдено {len(found)} вещей:")
+    await message.answer(f"🔍 Найдено {len(found)} вещей:")
+    
     for item in found:
         status_emoji = "✅" if item.get("status") == "active" else "❌"
         if item.get("photos"):
@@ -1100,9 +1202,29 @@ async def search_item_result(message: Message, state: FSMContext):
                        f"📌 Статус: {'✅ Активна' if item.get('status') == 'active' else '❌ Продана'}")
             photos = item.get("photos", [])
             if photos:
-                await message.answer_photo(photos[0], caption=caption, parse_mode="HTML", reply_markup=item_actions_menu(item['id']))
+                await message.answer_photo(
+                    photos[0],
+                    caption=caption,
+                    parse_mode="HTML",
+                    reply_markup=item_actions_menu(item['id'])
+                )
                 for photo_id in photos[1:]:
                     await message.answer_photo(photo_id)
+        elif item.get("photo"):
+            caption = (f"{status_emoji} <b>ID:</b> {item['id']}\n"
+                       f"📦 {item['name']}\n"
+                       f"📏 Размер: {item['size']}\n"
+                       f"🎨 Цвет: {item['color']}\n"
+                       f"🏷️ {item['category']}\n"
+                       f"💰 {item['price']} ₽\n"
+                       f"📌 Статус: {'✅ Активна' if item.get('status') == 'active' else '❌ Продана'}")
+            await message.answer_photo(
+                item['photo'],
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=item_actions_menu(item['id'])
+            )
+    
     await message.answer(f"✅ Показано {len(found)} вещей.", reply_markup=main_menu())
     await state.clear()
 
@@ -1163,6 +1285,7 @@ async def save_sale(message: Message, state: FSMContext):
         data = await state.get_data()
         item_id = data.get("item_id")
         item_name = data.get("item_name", "Без названия")
+        
         user_data["shared"]["sales"].append({
             "item_id": item_id,
             "name": item_name,
@@ -1175,6 +1298,7 @@ async def save_sale(message: Message, state: FSMContext):
                 break
         recalculate_money()
         save_data(user_data)
+        
         await message.answer(
             f"✅ Продажа записана!\n\n🆔 Вещь #{item_id}\n📦 {item_name} — {price} ₽\n\n<b>Деньги разложены:</b>\n👩 Себе (30%): {int(price*0.3)} ₽\n📦 Оборот (40%): {int(price*0.4)} ₽\n📮 Почта (15%): {int(price*0.15)} ₽\n🛡️ Подушка (10%): {int(price*0.1)} ₽\n✨ Мечта (5%): {int(price*0.05)} ₽",
             parse_mode="HTML",
@@ -1184,7 +1308,7 @@ async def save_sale(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Ошибка! Введи число", reply_markup=back_to_menu_button())
 
-# ========== СТАТИСТИКА (С ОТЧЁТОМ И РАСХОДАМИ) ==========
+# ========== СТАТИСТИКА ==========
 @dp.callback_query(lambda c: c.data == "stats")
 async def show_stats(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -1216,6 +1340,7 @@ async def show_stats(callback: CallbackQuery, state: FSMContext):
     for item in items:
         cat = item.get("category", "Другое")
         categories[cat] = categories.get(cat, 0) + 1
+    
     cat_text = ""
     for cat, count in categories.items():
         cat_text += f"{cat}: {count} шт.\n"
@@ -1360,7 +1485,7 @@ async def show_scripts(callback: CallbackQuery, state: FSMContext):
 
 # ========== ЗАПУСК ==========
 async def main():
-    print("✅ Бот с обновлённым поиском, всеми вещами, 5 фото и отчётом запущен!")
+    print("✅ Бот с обновлённым поиском, всеми вещами, 5 фото, отчётом и автоматическими промтами из категорий запущен!")
     asyncio.create_task(check_reminders())
     await dp.start_polling(bot)
 
