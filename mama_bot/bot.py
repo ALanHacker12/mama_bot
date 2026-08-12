@@ -72,10 +72,10 @@ def recalculate_money():
         money["dream"] += int(price * 0.05)
     user_data["shared"]["money"] = money
 
-# ========== ПЕРЕВОД КАТЕГОРИЙ ==========
+# ========== ПЕРЕВОД КАТЕГОРИЙ (РАСШИРЕННЫЙ) ==========
 CATEGORY_TRANSLATE = {
     "Платье": "dress", "Платья": "dress", "Платье": "dress",
-    "Пальто": "coat", "Куртка": "coat", "Куртки": "coat",
+    "Пальто": "coat", "Куртка": "jacket", "Куртки": "jacket",
     "Джинсы": "jeans", "Брюки": "pants",
     "Кофта": "sweater", "Кофты": "sweater", "Свитер": "sweater",
     "Рубашка": "shirt", "Блузка": "blouse",
@@ -84,16 +84,20 @@ CATEGORY_TRANSLATE = {
     "Боди": "bodysuit",
     "Туника": "tunic",
     "Футболка": "tshirt",
-    "Бомбер": "bomber",
-    "Тренч": "trench",
+    "Бомбер": "bomber jacket",
+    "Тренч": "trench coat",
     "Кардиган": "cardigan",
     "Сарафан": "sundress",
-    "Костюм": "suit"
+    "Костюм": "suit",
+    "Кроп-топ": "crop top",
+    "Жилет": "vest",
+    "Комбинезон": "jumpsuit"
 }
 
 PROMPT_TEMPLATES = {
     "dress": "Professional fashion photography. A beautiful women's {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
     "coat": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
+    "jacket": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
     "jeans": "Professional product photography. A pair of {category} perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original fit, folds, denim texture, and colors. Tags and labels must stay inside. Soft studio lighting. 8k, sharp focus, commercial quality.",
     "pants": "Professional product photography. A pair of {category} perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original fit, folds, fabric texture, and colors. Tags and labels must stay inside. Soft studio lighting. 8k, sharp focus, commercial quality.",
     "sweater": "Professional knitwear photography. A cozy {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the original shape, knit texture, drape, and colors. Labels must remain hidden inside. Soft natural lighting. 8k, hyper-realistic, commercial quality.",
@@ -101,22 +105,25 @@ PROMPT_TEMPLATES = {
     "shirt": "Professional shirt photography. A crisp {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the original shape, collar, cuffs, fabric texture, and colors. Tags must stay inside. Bright studio lighting. 8k, sharp focus, commercial catalog quality.",
     "shorts": "Professional bottom wear photography. A stylish {category} perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original shape, draping, fabric texture, and colors. Labels must remain inside. Soft diffused lighting. 8k, commercial quality.",
     "skirt": "Professional bottom wear photography. A stylish {category} perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original shape, draping, fabric texture, and colors. Labels must remain inside. Soft diffused lighting. 8k, commercial quality.",
-    "jacket": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
     "bodysuit": "Professional fashion photography. A beautiful {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
     "tunic": "Professional fashion photography. A beautiful {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
     "tshirt": "Professional fashion photography. A beautiful {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
-    "bomber": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
-    "trench": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
+    "bomber jacket": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
+    "trench coat": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
     "cardigan": "Professional knitwear photography. A cozy {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the original shape, knit texture, drape, and colors. Labels must remain hidden inside. Soft natural lighting. 8k, hyper-realistic, commercial quality.",
     "sundress": "Professional fashion photography. A beautiful women's {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
     "suit": "Professional fashion photography. A beautiful women's {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
+    "crop top": "Professional fashion photography. A beautiful {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
+    "vest": "Professional outerwear photography. A stylish {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, draping, fabric texture, and colors. Internal labels must remain hidden inside the garment. Soft diffused lighting. 8k, hyper-realistic, luxury catalog quality.",
+    "jumpsuit": "Professional fashion photography. A beautiful {category} perfectly fitted on a minimalist white mannequin torso. Pure white studio background. Keep the exact shape, folds, fabric texture, and colors exactly as they are. All tags and labels must remain inside the garment, not visible on the front. Soft diffused studio lighting. 8k, hyper-realistic, commercial catalog quality, sharp focus on fabric and details.",
     "default": "Professional product photography. The garment perfectly displayed on a minimalist white mannequin. Pure white studio background. Keep the original shape, fabric texture, colors, and all details. All tags and labels must remain hidden inside. Soft studio lighting. 8k, hyper-realistic, commercial catalog quality."
 }
 
 def get_prompt_for_category(category, item_name):
     category_en = CATEGORY_TRANSLATE.get(category, "garment")
     template = PROMPT_TEMPLATES.get(category_en, PROMPT_TEMPLATES["default"])
-    return template.format(category=item_name or category)
+    # Используем английское название категории, а не русское
+    return template.format(category=category_en)
 
 # ========== КЛАВИАТУРЫ ==========
 def main_menu():
@@ -314,7 +321,6 @@ async def prompt_menu(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     
-    # Создаём клавиатуру из категорий
     kb_buttons = []
     for cat, count in categories.items():
         kb_buttons.append([InlineKeyboardButton(text=f"{cat} ({count})", callback_data=f"prompt_cat_{cat}")])
@@ -346,9 +352,13 @@ async def prompt_category_selected(callback: CallbackQuery, state: FSMContext):
     category = callback.data.replace("prompt_cat_", "")
     prompt = get_prompt_for_category(category, category)
     
+    # Показываем перевод категории
+    category_en = CATEGORY_TRANSLATE.get(category, "garment")
+    
     await callback.message.delete()
     await callback.message.answer(
-        f"🎨 <b>Промт для категории «{category}»</b>\n\n"
+        f"🎨 <b>Промт для категории «{category}»</b>\n"
+        f"📌 <b>Перевод:</b> {category_en}\n\n"
         f"<b>⬇️ Скопируй этот текст:</b>\n"
         f"<code>{prompt}</code>\n\n"
         "📌 <b>Инструкция:</b>\n"
@@ -1171,17 +1181,23 @@ async def search_item_result(message: Message, state: FSMContext):
         items = user_data["shared"].get("items", [])
     
     found = []
-    for item in items:
-        if query.isdigit() and item.get("id") == int(query):
-            found.append(item)
-            continue
-        if (query in str(item.get("id")).lower() or
-            query in item.get("name", "").lower() or 
-            query in item.get("size", "").lower() or 
-            query in item.get("color", "").lower() or 
-            query in item.get("category", "").lower() or 
-            query in item.get("tags", "").lower()):
-            found.append(item)
+    
+    # Если запрос — число, ищем ТОЛЬКО по ID (точное совпадение)
+    if query.isdigit():
+        for item in items:
+            if item.get("id") == int(query):
+                found.append(item)
+                break
+    else:
+        # Текстовый поиск
+        for item in items:
+            if (query in str(item.get("id")).lower() or
+                query in item.get("name", "").lower() or 
+                query in item.get("size", "").lower() or 
+                query in item.get("color", "").lower() or 
+                query in item.get("category", "").lower() or 
+                query in item.get("tags", "").lower()):
+                found.append(item)
     
     if not found:
         await message.answer("❌ Ничего не найдено. Попробуй другой запрос.", reply_markup=main_menu())
@@ -1485,7 +1501,7 @@ async def show_scripts(callback: CallbackQuery, state: FSMContext):
 
 # ========== ЗАПУСК ==========
 async def main():
-    print("✅ Бот с обновлённым поиском, всеми вещами, 5 фото, отчётом и автоматическими промтами из категорий запущен!")
+    print("✅ Бот с обновлённым поиском, всеми вещами, 5 фото, отчётом, автоматическими промтами из категорий и переводом на английский запущен!")
     asyncio.create_task(check_reminders())
     await dp.start_polling(bot)
 
